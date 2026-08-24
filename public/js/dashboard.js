@@ -9,6 +9,17 @@ let invoices = [];
 let txFilter = '';
 let txSearch = '';
 
+/* ---------- Overview v2 state ---------- */
+let ovRange = 'today';        // 'today' | '7d' | '30d' | 'custom'
+let ovCustomStart = null;
+let ovCustomEnd = null;
+let ovMetric = 'volume';      // 'volume' | 'count'
+let ovSpanDays = 30;          // 7 | 30 | 90 | 365
+let rtxSearch = '';
+let rtxStatusFilter = '';
+let customerById = {};
+let walletPendingMinor = null;
+
 // The dashboard is a session login (httpOnly cookie), which has no
 // key-derived mode - see auth.middleware. Session calls must still tell
 // the API which wallet/transaction set to read, so this stays fixed at
@@ -54,7 +65,10 @@ function showTab(name) {
   // so re-render whenever a chart-bearing tab becomes visible.
   // Analytics charts now live inside the Settings tab (see dashboard.html).
   if (name === 'overview' || name === 'settings') {
-    requestAnimationFrame(() => renderCharts());
+    requestAnimationFrame(() => {
+      renderCharts();
+      if (name === 'overview') renderOverviewAnalytics();
+    });
   }
 }
 document.querySelectorAll('.side-link').forEach(btn => {
@@ -77,11 +91,14 @@ async function loadProfile() {
   document.getElementById('setLivePubKey').textContent = res.data.livePublicKey || '—';
 
   const firstName = (res.data.businessName || '').trim().split(/\s+/)[0] || 'there';
-  setText('pageGreetName', firstName);
+  setText('ovGreetName', firstName);
   setText('sideBizName', res.data.businessName);
   setText('sideMerchantId', res.data._id ? `Merchant ID: ${res.data._id}` : '');
   const initial = (res.data.businessName || '?').trim().charAt(0).toUpperCase();
   setText('sideAvatarInitial', initial || '?');
+
+  setText('topBizName', res.data.businessName);
+  setText('topAvatarInitial', initial || '?');
 }
 
 /* ---------- Wallet ---------- */
@@ -97,6 +114,7 @@ function renderBalanceCard() {
 async function loadWallet() {
   const res = await api(`/api/wallet?mode=${VIEW_MODE}`);
   walletBalanceMinor = res.data.balance;
+  walletPendingMinor = res.data.pendingSettlementBalance ?? 0;
   renderBalanceCard();
 }
 
@@ -141,23 +159,10 @@ function renderTransactions() {
     tbody.innerHTML = filtered.map(renderTxRow).join('');
   }
 
-  // Overview: most recent 5, unfiltered
-  const recentBody = document.querySelector('#recentTxTable tbody');
-  const recentEmpty = document.getElementById('recentTxEmpty');
-  const recent = transactions.slice(0, 5);
-  if (!recent.length) {
-    recentBody.innerHTML = '';
-    recentEmpty.style.display = 'block';
-  } else {
-    recentEmpty.style.display = 'none';
-    recentBody.innerHTML = recent.map(t => `
-      <tr>
-        <td>${esc(t.reference || t.bankReference || '—')}</td>
-        <td><span class="status-pill status-${t.status}">${esc(t.status)}</span></td>
-        <td>${money(t.amountReceived)}</td>
-        <td>${fmtDate(t.createdAt)}</td>
-      </tr>`).join('');
-  }
+  // Overview's own "Recent transactions" panel (rtx*) is rendered separately
+  // by renderRecentTxV2(), since it has its own search/filter state and
+  // customer lookups.
+  renderRecentTxV2();
 }
 
 function populateRefundTxOptions() {
@@ -246,6 +251,8 @@ function renderCustomers() {
 async function loadCustomers() {
   const res = await api('/api/customers');
   customers = res.data.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  customerById = {};
+  customers.forEach((c) => { customerById[c._id] = c; });
   renderCustomers();
 }
 
@@ -333,6 +340,12 @@ function renderDisputes() {
     badge.style.display = 'inline-block';
   } else {
     badge.style.display = 'none';
+  }
+
+  const notifBadge = document.getElementById('notifBadge');
+  if (notifBadge) {
+    notifBadge.textContent = String(openCount);
+    notifBadge.classList.toggle('show', openCount > 0);
   }
 
   if (!disputes.length) {
@@ -596,6 +609,10 @@ async function refreshAll() {
     loadSubaccounts(),
   ]);
   renderCharts();
+  renderGreeting();
+  renderStatCards();
+  renderOverviewAnalytics();
+  renderRecentTxV2();
 }
 
 /* ---------- Charts (Overview + Analytics tab) ---------- */
@@ -622,15 +639,18 @@ function lastNDays(n) {
 const SETTLED_STATUSES = ['success', 'partial', 'over'];
 
 function buildDailySeries(days) {
-  // Returns { received: {day: minorTotal}, paid: {day: minorTotal}, ohlc: {day: {o,h,l,c}} }
+  // Returns { received: {day: minorTotal}, paid: {day: minorTotal}, count: {day: txCount}, ohlc: {day: {o,h,l,c}} }
   const received = {};
   const paid = {};
+  const count = {};
   const ohlc = {};
-  days.forEach(d => { received[d] = 0; paid[d] = 0; });
+  days.forEach(d => { received[d] = 0; paid[d] = 0; count[d] = 0; });
 
   transactions.forEach(t => {
-    if (!SETTLED_STATUSES.includes(t.status)) return;
     const key = dayKey(t.createdAt);
+    if (key in count) count[key] += 1;
+
+    if (!SETTLED_STATUSES.includes(t.status)) return;
     const amt = (t.amountReceived || 0) / 100;
     if (key in received) received[key] += amt;
 
@@ -649,7 +669,7 @@ function buildDailySeries(days) {
     if (key in paid) paid[key] += (p.amount || 0) / 100;
   });
 
-  return { received, paid, ohlc };
+  return { received, paid, count, ohlc };
 }
 
 function renderCharts() {
@@ -952,15 +972,336 @@ document.getElementById('txSearch').addEventListener('input', (e) => {
   renderTransactions();
 });
 
+/* ================= Overview v2: stat cards, analytics chart, recent tx ================= */
+
+function computeTrend(curVal, prevVal) {
+  if (!prevVal) return { pct: curVal ? 100 : 0, dir: curVal > 0 ? 'up' : 'flat' };
+  const pct = ((curVal - prevVal) / Math.abs(prevVal)) * 100;
+  return { pct: Math.abs(pct), dir: pct > 0.05 ? 'up' : pct < -0.05 ? 'down' : 'flat' };
+}
+
+function renderTrend(id, trend) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const arrow = trend.dir === 'up' ? '↗' : trend.dir === 'down' ? '↘' : '→';
+  el.innerHTML = `<span class="trend-badge ${trend.dir}">${arrow} ${trend.pct.toFixed(1)}%</span><span class="trend-note">vs previous period</span>`;
+}
+
+function inRange(d, start, end) {
+  const t = new Date(d).getTime();
+  return t >= start.getTime() && t <= end.getTime();
+}
+
+function ovRangeBounds() {
+  const now = new Date();
+  let start;
+  let end = now;
+  if (ovRange === 'today') {
+    start = new Date(now); start.setHours(0, 0, 0, 0);
+  } else if (ovRange === '7d') {
+    start = new Date(now.getTime() - 7 * 86400000);
+  } else if (ovRange === '30d') {
+    start = new Date(now.getTime() - 30 * 86400000);
+  } else if (ovRange === 'custom' && ovCustomStart && ovCustomEnd) {
+    start = new Date(ovCustomStart); start.setHours(0, 0, 0, 0);
+    end = new Date(ovCustomEnd); end.setHours(23, 59, 59, 999);
+  } else {
+    start = new Date(now); start.setHours(0, 0, 0, 0);
+  }
+  const spanMs = Math.max(end.getTime() - start.getTime(), 1);
+  const prevEnd = new Date(start.getTime() - 1);
+  const prevStart = new Date(prevEnd.getTime() - spanMs);
+  return { start, end, prevStart, prevEnd };
+}
+
+function renderGreeting() {
+  const now = new Date();
+  const hour = now.getHours();
+  const period = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
+  setText('ovGreetPeriod', period);
+  setText('ovDateLabel', now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase());
+  const rangeWord = ovRange === 'today' ? 'today'
+    : ovRange === '7d' ? 'in the last 7 days'
+    : ovRange === '30d' ? 'in the last 30 days'
+    : 'in the selected period';
+  setText('ovSubRangeWord', rangeWord);
+}
+
+function renderStatCards() {
+  const { start, end, prevStart, prevEnd } = ovRangeBounds();
+  const curTx = transactions.filter(t => inRange(t.createdAt, start, end));
+  const prevTx = transactions.filter(t => inRange(t.createdAt, prevStart, prevEnd));
+  const collected = (list) => list
+    .filter(t => SETTLED_STATUSES.includes(t.status))
+    .reduce((s, t) => s + (t.amountReceived || 0), 0);
+
+  const curCollected = collected(curTx);
+  const prevCollected = collected(prevTx);
+  const curPayouts = payouts
+    .filter(p => p.status === 'successful' && inRange(p.createdAt, start, end))
+    .reduce((s, p) => s + (p.amount || 0), 0);
+
+  // Available balance
+  setText('statAvailable', walletBalanceMinor == null ? '—' : money(walletBalanceMinor));
+  if (walletBalanceMinor != null) {
+    const approxPrevBalance = walletBalanceMinor - (curCollected - curPayouts);
+    renderTrend('statAvailableTrend', computeTrend(walletBalanceMinor, approxPrevBalance));
+  }
+
+  // Pending balance (live wallet figure, trend derived from pending-status volume this period vs last)
+  setText('statPending', walletPendingMinor == null ? '—' : money(walletPendingMinor));
+  const curPendingVol = curTx.filter(t => t.status === 'pending').reduce((s, t) => s + (t.amountExpected || t.amountReceived || 0), 0);
+  const prevPendingVol = prevTx.filter(t => t.status === 'pending').reduce((s, t) => s + (t.amountExpected || t.amountReceived || 0), 0);
+  renderTrend('statPendingTrend', computeTrend(curPendingVol, prevPendingVol));
+
+  // Total collected + total transactions, both scoped to the selected range
+  setText('statCollected', money(curCollected));
+  renderTrend('statCollectedTrend', computeTrend(curCollected, prevCollected));
+
+  setText('statTxCount', curTx.length.toLocaleString());
+  renderTrend('statTxCountTrend', computeTrend(curTx.length, prevTx.length));
+}
+
+function compactNum(n) {
+  const abs = Math.abs(n);
+  if (abs >= 1e9) return (n / 1e9).toFixed(2) + 'b';
+  if (abs >= 1e6) return (n / 1e6).toFixed(2) + 'm';
+  if (abs >= 1e3) return (n / 1e3).toFixed(1) + 'k';
+  return String(Math.round(n));
+}
+
+let _chartOvAnalytics = null;
+
+function renderOverviewAnalytics() {
+  if (typeof Chart === 'undefined') return;
+  const canvas = document.getElementById('ovAnalyticsChart');
+  if (!canvas) return;
+
+  const days = lastNDays(ovSpanDays);
+  const now = new Date();
+  const prevDays = [];
+  for (let i = ovSpanDays * 2 - 1; i >= ovSpanDays; i--) {
+    const d = new Date(now); d.setDate(d.getDate() - i);
+    prevDays.push(dayKey(d));
+  }
+
+  const curSeries = buildDailySeries(days);
+  const prevSeries = buildDailySeries(prevDays);
+
+  const pick = (series, day) => (ovMetric === 'volume' ? (series.received[day] || 0) : (series.count[day] || 0));
+  const curVals = days.map(d => pick(curSeries, d));
+  const prevVals = prevDays.map(d => pick(prevSeries, d));
+
+  const totalCur = curVals.reduce((a, b) => a + b, 0);
+  const totalPrev = prevVals.reduce((a, b) => a + b, 0);
+  const trend = computeTrend(totalCur, totalPrev);
+
+  setText('ovBigNum', ovMetric === 'volume' ? `₦${compactNum(totalCur)}` : totalCur.toLocaleString());
+  const bigTrendEl = document.getElementById('ovBigTrend');
+  if (bigTrendEl) {
+    const arrow = trend.dir === 'up' ? '↗' : trend.dir === 'down' ? '↘' : '→';
+    bigTrendEl.textContent = `${arrow} ${trend.pct.toFixed(1)}%`;
+    bigTrendEl.className = `big-trend ${trend.dir}`;
+  }
+
+  const labelFmt = ovSpanDays <= 30
+    ? (d) => new Date(d).toLocaleDateString('en-NG', { day: '2-digit', month: 'short' })
+    : (d) => new Date(d).toLocaleDateString('en-NG', { month: 'short', year: '2-digit' });
+
+  if (_chartOvAnalytics) _chartOvAnalytics.destroy();
+  _chartOvAnalytics = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: days.map(labelFmt),
+      datasets: [
+        {
+          label: 'Current period', data: curVals,
+          borderColor: '#0ea5e9', backgroundColor: 'rgba(14,165,233,0.12)',
+          fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2,
+        },
+        {
+          label: 'Previous period', data: prevVals,
+          borderColor: '#cbd5e1', backgroundColor: 'transparent',
+          borderDash: [4, 4], fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } },
+        y: { beginAtZero: true, ticks: { callback: (v) => (ovMetric === 'volume' ? '₦' + compactNum(v) : v) } },
+      },
+    },
+  });
+}
+
+function displayStatus(t) {
+  if ((t.refundedAmount || 0) > 0 && t.refundedAmount >= t.amountReceived) return 'refunded';
+  return t.status;
+}
+
+const AVATAR_PALETTE = ['#0ea5e9', '#7c3aed', '#f59e0b', '#16a34a', '#ec4899', '#0891b2', '#dc2626', '#6366f1'];
+function avatarColorFor(seed) {
+  const s = String(seed || '');
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return AVATAR_PALETTE[h % AVATAR_PALETTE.length];
+}
+function initialsFor(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '?';
+  return (parts[0][0] + (parts[1] ? parts[1][0] : '')).toUpperCase();
+}
+
+const PAYMENT_METHOD_LABEL = {
+  dedicated_virtual_account: 'Virtual Account',
+  card: 'Card',
+  bank_transfer: 'Bank Transfer',
+  ussd: 'USSD',
+};
+
+function renderRtxRow(t) {
+  const cust = customerById[t.customer];
+  const name = cust?.fullName || 'Unknown customer';
+  const email = cust?.email || '';
+  const init = initialsFor(name);
+  const color = avatarColorFor(cust?._id || t.customer || name);
+  const ds = displayStatus(t);
+  const methodLabel = PAYMENT_METHOD_LABEL[t.channel] || 'Virtual Account';
+  return `
+    <tr>
+      <td>
+        <div class="cust-cell">
+          <span class="cust-avatar" style="background:${color}">${esc(init)}</span>
+          <div class="cust-who">
+            <span class="cust-name">${esc(name)}</span>
+            <span class="cust-email">${esc(email)}</span>
+          </div>
+        </div>
+      </td>
+      <td>${money(t.amountReceived)}</td>
+      <td><span class="status-pill status-${ds}">${esc(ds)}</span></td>
+      <td>${esc(methodLabel)}</td>
+      <td>${fmtDate(t.createdAt)}</td>
+      <td class="mono-cell">${esc(t.reference || t.bankReference || '—')}</td>
+    </tr>`;
+}
+
+function renderRecentTxV2() {
+  const tbody = document.querySelector('#rtxTable tbody');
+  const empty = document.getElementById('rtxEmpty');
+  if (!tbody) return;
+
+  let list = transactions;
+  if (rtxStatusFilter) list = list.filter(t => displayStatus(t) === rtxStatusFilter);
+  if (rtxSearch) {
+    const q = rtxSearch.toLowerCase();
+    list = list.filter((t) => {
+      const cust = customerById[t.customer];
+      const hay = `${t.reference || ''} ${t.bankReference || ''} ${cust?.fullName || ''} ${cust?.email || ''}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }
+
+  setText('rtxTotalCount', transactions.length ? `${transactions.length.toLocaleString()} total` : '');
+
+  const shown = list.slice(0, 6);
+  if (!shown.length) {
+    tbody.innerHTML = '';
+    empty.style.display = 'block';
+  } else {
+    empty.style.display = 'none';
+    tbody.innerHTML = shown.map(renderRtxRow).join('');
+  }
+  setText('rtxShowingText', list.length
+    ? `Showing 1–${shown.length} of ${list.length.toLocaleString()} transactions`
+    : 'No matching transactions');
+}
+
+/* ---------- Overview v2 event wiring ---------- */
+document.querySelectorAll('#ovRangeTabs .range-tab').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    if (btn.dataset.range === 'custom') {
+      const box = document.getElementById('ovCustomRange');
+      if (box) box.style.display = box.style.display === 'none' ? 'flex' : 'none';
+      return;
+    }
+    const box = document.getElementById('ovCustomRange');
+    if (box) box.style.display = 'none';
+    document.querySelectorAll('#ovRangeTabs .range-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    ovRange = btn.dataset.range;
+    renderGreeting();
+    renderStatCards();
+  });
+});
+
+document.getElementById('ovCustomApply')?.addEventListener('click', () => {
+  const s = document.getElementById('ovCustomStart').value;
+  const e = document.getElementById('ovCustomEnd').value;
+  if (!s || !e) { toast('Pick a start and end date', true); return; }
+  ovCustomStart = s;
+  ovCustomEnd = e;
+  ovRange = 'custom';
+  document.querySelectorAll('#ovRangeTabs .range-tab').forEach(b => b.classList.remove('active'));
+  document.querySelector('#ovRangeTabs .range-tab[data-range="custom"]')?.classList.add('active');
+  renderGreeting();
+  renderStatCards();
+});
+
+document.querySelectorAll('#ovMetricToggle .seg').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#ovMetricToggle .seg').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    ovMetric = btn.dataset.metric;
+    renderOverviewAnalytics();
+  });
+});
+
+document.querySelectorAll('#ovSpanToggle .seg').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#ovSpanToggle .seg').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    ovSpanDays = parseInt(btn.dataset.span, 10);
+    renderOverviewAnalytics();
+  });
+});
+
+document.getElementById('rtxSearch')?.addEventListener('input', (e) => {
+  rtxSearch = e.target.value.trim();
+  renderRecentTxV2();
+});
+
+document.getElementById('rtxStatusFilter')?.addEventListener('change', (e) => {
+  rtxStatusFilter = e.target.value;
+  renderRecentTxV2();
+});
+
+document.getElementById('rtxExportBtn')?.addEventListener('click', () => {
+  const rows = Array.from(document.querySelectorAll('#rtxTable tbody tr'));
+  if (!rows.length) { toast('No transactions to export', true); return; }
+  const headers = Array.from(document.querySelectorAll('#rtxTable thead th')).map(th => th.textContent.trim());
+  const csvRows = [headers.join(',')];
+  rows.forEach((tr) => {
+    const cells = Array.from(tr.children).map((td) => `"${td.textContent.trim().replace(/"/g, '""')}"`);
+    csvRows.push(cells.join(','));
+  });
+  const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `swiftpay-recent-transactions-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+});
+
+renderGreeting();
+
 refreshAll().catch((err) => {
   if (err.message !== 'unauthenticated') toast(err.message, true);
 });
-
-(function setOverviewDateRange() {
-  const fmt = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  const end = new Date();
-  const start = new Date();
-  start.setDate(end.getDate() - 7);
-  setText('ovRangeStart', fmt(start));
-  setText('ovRangeEnd', fmt(end));
-})();

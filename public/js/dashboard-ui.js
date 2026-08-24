@@ -2,22 +2,18 @@
   // (mobile drawer, page title/crumb sync, avatar initial, CSV export)
   (function () {
     const TAB_LABELS = {
-      overview: 'Home', transactions: 'Transactions', customers: 'Customers',
-      balances: 'Balances', store: 'Store', payments: 'Payments',
+      overview: 'Overview', transactions: 'Transactions', customers: 'Customers',
+      balances: 'Balances', store: 'Store', payments: 'Payouts',
       subaccounts: 'Subaccounts', settings: 'Settings',
     };
 
     function syncHeader(name) {
       const title = document.getElementById('pageTitle');
       const crumb = document.getElementById('crumbLabel');
-      const label = TAB_LABELS[name] || 'Home';
-      if (title) {
-        // Home keeps its "Hello {name} 👋" greeting markup rather than
-        // being replaced by plain tab-label text.
-        title.innerHTML = name === 'overview'
-          ? 'Hello <span id="pageGreetName">' + (document.getElementById('pageGreetName')?.textContent || '—') + '</span> 👋'
-          : label;
-      }
+      const label = TAB_LABELS[name] || 'Overview';
+      // The Overview tab now carries its own "Good morning, {name}" greeting
+      // inside the tab body, so the shared page-head just shows a plain label.
+      if (title) title.textContent = label;
       if (crumb) crumb.textContent = '/ ' + label;
     }
 
