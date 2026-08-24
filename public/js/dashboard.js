@@ -672,6 +672,8 @@ function buildDailySeries(days) {
 }
 
 function renderCharts() {
+  renderInsights(); // plain arithmetic over already-loaded data — doesn't need Chart.js
+
   if (typeof Chart === 'undefined') return; // CDN blocked / offline — charts simply don't render
 
   const days30 = lastNDays(30);
@@ -761,8 +763,6 @@ function renderCharts() {
       });
     }
   }
-
-  renderInsights();
 }
 
 function renderInsights() {
@@ -1067,11 +1067,10 @@ function compactNum(n) {
 
 let _chartOvAnalytics = null;
 
-function renderOverviewAnalytics() {
-  if (typeof Chart === 'undefined') return;
-  const canvas = document.getElementById('ovAnalyticsChart');
-  if (!canvas) return;
-
+// Computes the "Payment analytics" big number + trend and the series behind
+// it. Pure arithmetic over already-loaded data — no Chart.js dependency —
+// so this always runs, even when the charting CDN failed to load.
+function computeOvBigNumber() {
   const days = lastNDays(ovSpanDays);
   const now = new Date();
   const prevDays = [];
@@ -1098,6 +1097,16 @@ function renderOverviewAnalytics() {
     bigTrendEl.textContent = `${arrow} ${trend.pct.toFixed(1)}%`;
     bigTrendEl.className = `big-trend ${trend.dir}`;
   }
+
+  return { days, prevDays, curVals, prevVals };
+}
+
+function renderOverviewAnalytics() {
+  const { days, prevVals, curVals } = computeOvBigNumber();
+
+  if (typeof Chart === 'undefined') return; // only the canvas drawing needs Chart.js
+  const canvas = document.getElementById('ovAnalyticsChart');
+  if (!canvas) return;
 
   const labelFmt = ovSpanDays <= 30
     ? (d) => new Date(d).toLocaleDateString('en-NG', { day: '2-digit', month: 'short' })
