@@ -157,12 +157,12 @@ async function assignVirtualAccount({
   customer.virtualAccount = account._id;
   await customer.save();
 
+  
   // Only tell the REAL bank about assignment if this is a real account.
-  // Test-mode accounts never make a network call to RexxPay Bank at all.
-  if (isLive(account)) {
-    await assignBankPoolAccount(account.accountNumber);
-  }
-
+// Test-mode accounts never make a network call to RexxPay Bank at all.
+if (isLive(account)) {
+  await assignBankPoolAccount(account.accountNumber, account.amountExpected);
+}
   return { account, checkoutToken };
 }
 
