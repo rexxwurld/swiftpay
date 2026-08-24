@@ -615,8 +615,7 @@ async function refreshAll() {
   renderRecentTxV2();
 }
 
-/* ---------- Charts (Overview + Analytics tab) ---------- */
-let _chartOvRevenue = null;
+/* ---------- Charts (Analytics tab) ---------- */
 let _chartAnBar = null;
 let _chartAnCandle = null;
 
@@ -675,39 +674,11 @@ function buildDailySeries(days) {
 function renderCharts() {
   if (typeof Chart === 'undefined') return; // CDN blocked / offline — charts simply don't render
 
-  const days14 = lastNDays(14);
   const days30 = lastNDays(30);
-  const series14 = buildDailySeries(days14);
   const series30 = buildDailySeries(days30);
 
   const shortLabel = (d) => new Date(d).toLocaleDateString('en-NG', { day: '2-digit', month: 'short' });
 
-  // ---- Overview: 14-day revenue bar chart ----
-  const ovCanvas = document.getElementById('ovRevenueChart');
-  if (ovCanvas) {
-    if (_chartOvRevenue) _chartOvRevenue.destroy();
-    _chartOvRevenue = new Chart(ovCanvas, {
-      type: 'bar',
-      data: {
-        labels: days14.map(shortLabel),
-        datasets: [{
-          label: 'Received',
-          data: days14.map(d => series14.received[d]),
-          backgroundColor: '#0ea5e9',
-          borderRadius: 4,
-          maxBarThickness: 26,
-        }],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          y: { beginAtZero: true, ticks: { callback: (v) => '₦' + v.toLocaleString() } },
-        },
-      },
-    });
-  }
 
   // ---- Analytics: 30-day bar (received vs paid out) ----
   const anBarCanvas = document.getElementById('anBarChart');
@@ -834,10 +805,34 @@ function renderInsights() {
 }
 
 /* ---------- Event wiring: existing panels ---------- */
-document.getElementById('logoutBtn').addEventListener('click', async () => {
+async function performLogout() {
   await api('/api/auth/logout', { method: 'POST' }).catch(() => {});
   window.location.href = '/onboarding.html?tab=login';
-});
+}
+
+document.getElementById('logoutBtn').addEventListener('click', performLogout);
+document.getElementById('topLogoutBtn')?.addEventListener('click', performLogout);
+
+/* ---------- Topbar avatar -> logout dropdown ---------- */
+(function wireUserMenu() {
+  const menu = document.getElementById('topUserMenu');
+  const trigger = document.getElementById('topUserChipBtn');
+  if (!menu || !trigger) return;
+
+  const close = () => { menu.classList.remove('open'); trigger.setAttribute('aria-expanded', 'false'); };
+  const open = () => { menu.classList.add('open'); trigger.setAttribute('aria-expanded', 'true'); };
+
+  trigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    menu.classList.contains('open') ? close() : open();
+  });
+  document.addEventListener('click', (e) => {
+    if (!menu.contains(e.target)) close();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') close();
+  });
+})();
 
 document.getElementById('webhookForm').addEventListener('submit', async (e) => {
   e.preventDefault();
