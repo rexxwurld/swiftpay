@@ -44,12 +44,21 @@ const app = express();
 
 
 app.set('trust proxy', 1);
-app.use(helmet());
+
 app.use(cors());
 app.use(morgan('dev'));
 app.use(cookieParser());
 app.use(express.json());
 app.use(generalLimiter);
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+      scriptSrc: ["'self'", 'https://cdn.jsdelivr.net'],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
+    },
+  },
+}));
 
 
 // Hosted checkout.
