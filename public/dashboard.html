@@ -458,6 +458,7 @@
     .overview-split .ov-chart-side { border-right: none; border-bottom: 1px solid var(--line-soft); }
   }
 </style>
+<link rel="stylesheet" href="/css/dashboard-overview.css" />
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
@@ -481,7 +482,20 @@
   </div>
   <div class="topbar-search">
     <svg class="icon ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-    <input type="text" placeholder="Search for features or sub-features" disabled title="Search coming soon" />
+    <input type="text" id="topbarSearch" placeholder="Search anything" />
+  </div>
+  <div class="topbar-right">
+    <button class="notif-btn" id="notifBtn" type="button" aria-label="Notifications" title="Open disputes">
+      <svg class="icon" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      <span class="notif-badge" id="notifBadge">0</span>
+    </button>
+    <div class="user-chip">
+      <div class="avatar" id="topAvatarInitial">—</div>
+      <div class="who">
+        <span class="nm" id="topBizName">—</span>
+        <span class="role">Business account</span>
+      </div>
+    </div>
   </div>
   <div style="display:none;">
     <span id="bizName"></span><span id="bizEmail"></span>
@@ -495,33 +509,43 @@
 
   <aside class="sidebar" id="sidebarDrawer">
     <div class="sidebar-group">
+      <div class="sidebar-label">Overview</div>
       <button class="side-link active" data-tab="overview">
         <svg class="icon ic" viewBox="0 0 24 24"><path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>
-        Home
+        Dashboard
       </button>
+    </div>
+    <div class="sidebar-group">
+      <div class="sidebar-label">Payments</div>
       <button class="side-link" data-tab="transactions">
         <svg class="icon ic" viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
         Transactions<span class="badge-count" id="disputeBadge" style="display:none;" title="Open disputes"></span>
       </button>
-      <button class="side-link" data-tab="customers">
-        <svg class="icon ic" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-        Customers
-      </button>
-      <button class="side-link" data-tab="balances">
-        <svg class="icon ic" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-        Balances
+      <button class="side-link" data-tab="payments">
+        <svg class="icon ic" viewBox="0 0 24 24"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg>
+        Payouts
       </button>
       <button class="side-link" data-tab="store">
         <svg class="icon ic" viewBox="0 0 24 24"><path d="M3 9l1.5-5h15L21 9"/><path d="M3 9h18v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><line x1="9" y1="13" x2="15" y2="13"/></svg>
         Store
       </button>
-      <button class="side-link" data-tab="payments">
-        <svg class="icon ic" viewBox="0 0 24 24"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg>
-        Payments
+    </div>
+    <div class="sidebar-group">
+      <div class="sidebar-label">Money</div>
+      <button class="side-link" data-tab="balances">
+        <svg class="icon ic" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+        Balances
       </button>
       <button class="side-link" data-tab="subaccounts">
         <svg class="icon ic" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         Subaccounts
+      </button>
+    </div>
+    <div class="sidebar-group">
+      <div class="sidebar-label">Business</div>
+      <button class="side-link" data-tab="customers">
+        <svg class="icon ic" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Customers
       </button>
       <button class="side-link" data-tab="settings">
         <svg class="icon ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -535,7 +559,7 @@
 
     <div class="page-head">
       <div>
-        <h1 id="pageTitle">Hello <span id="pageGreetName">—</span> 👋</h1>
+        <h1 id="pageTitle">Overview</h1>
       </div>
       <div class="head-actions" style="display:none;">
         <button class="btn btn-ghost btn-sm" data-goto="payments">Send payout</button>
@@ -546,98 +570,128 @@
     <!-- ============ HOME ============ -->
     <div class="tab-panel active" id="tab-overview">
 
-      <div class="section-head">
-        <h2>Balances <svg class="icon" viewBox="0 0 24 24" style="width:15px;height:15px;display:inline-block;vertical-align:middle;color:var(--ink-faint);"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></h2>
-        <button class="btn btn-ghost btn-sm" data-goto="balances">View all balances</button>
+      <div class="ov-top">
+        <div>
+          <div class="ov-date" id="ovDateLabel">—</div>
+          <h1 class="ov-greet">Good <span id="ovGreetPeriod">day</span>, <span id="ovGreetName">—</span> <span class="wave">👋</span></h1>
+          <p class="ov-sub">Here's what's happening with your payments <span id="ovSubRangeWord">today</span>.</p>
+        </div>
+        <div class="range-tabs" id="ovRangeTabs">
+          <button class="range-tab active" data-range="today">Today</button>
+          <button class="range-tab" data-range="7d">7 days</button>
+          <button class="range-tab" data-range="30d">30 days</button>
+          <button class="range-tab" data-range="custom">
+            <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <span class="label-full">Custom</span>
+          </button>
+        </div>
       </div>
-      <div class="balance-grid">
-        <div class="balance-card">
-          <div class="balance-card-top"><span class="flag">🇳🇬</span><span>NGN balance</span></div>
-          <div class="balance-sub">Payout balance</div>
-          <div class="balance-amt-row">
-            <span class="balance-amt" id="balNGN">₦ ******</span>
-            <button class="eye-btn" id="balNGNEye" type="button" aria-label="Show balance">
-              <svg class="icon" viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+
+      <div class="ov-custom-range" id="ovCustomRange" style="display:none;">
+        <input type="date" id="ovCustomStart" />
+        <span>to</span>
+        <input type="date" id="ovCustomEnd" />
+        <button type="button" class="btn btn-sm btn-accent" id="ovCustomApply">Apply</button>
+      </div>
+
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-top">
+            <span class="stat-label">Available Balance</span>
+            <span class="stat-ic"><svg class="icon" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg></span>
+          </div>
+          <div class="stat-amt" id="statAvailable">—</div>
+          <div class="stat-trend" id="statAvailableTrend"></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-top">
+            <span class="stat-label">Pending Balance</span>
+            <span class="stat-ic"><svg class="icon" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span>
+          </div>
+          <div class="stat-amt" id="statPending">—</div>
+          <div class="stat-trend" id="statPendingTrend"></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-top">
+            <span class="stat-label">Total Collected</span>
+            <span class="stat-ic"><svg class="icon" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>
+          </div>
+          <div class="stat-amt" id="statCollected">—</div>
+          <div class="stat-trend" id="statCollectedTrend"></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-top">
+            <span class="stat-label">Total Transactions</span>
+            <span class="stat-ic"><svg class="icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
+          </div>
+          <div class="stat-amt" id="statTxCount">—</div>
+          <div class="stat-trend" id="statTxCountTrend"></div>
+        </div>
+      </div>
+
+      <div class="panel analytics-card">
+        <div class="analytics-head">
+          <h2>Payment analytics <span class="live-badge"><span class="dot"></span>Live</span></h2>
+          <div class="analytics-controls">
+            <div class="seg-toggle" id="ovMetricToggle">
+              <button class="seg active" data-metric="volume">Volume</button>
+              <button class="seg" data-metric="count">Transactions</button>
+            </div>
+            <div class="seg-toggle" id="ovSpanToggle">
+              <button class="seg" data-span="7">7D</button>
+              <button class="seg active" data-span="30">30D</button>
+              <button class="seg" data-span="90">3M</button>
+              <button class="seg" data-span="365">1Y</button>
+            </div>
+          </div>
+        </div>
+        <div class="analytics-figure">
+          <span class="big-num" id="ovBigNum">—</span>
+          <span class="big-trend" id="ovBigTrend"></span>
+        </div>
+        <div class="chart-canvas-wrap" style="height: 260px;">
+          <canvas id="ovAnalyticsChart"></canvas>
+        </div>
+        <div class="legend-row">
+          <span class="li"><span class="sw" style="background:var(--brand);"></span>Current period</span>
+          <span class="li"><span class="sw" style="background:var(--ink-faint);"></span>Previous period</span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head rtx-head">
+          <div>
+            <h2>Recent transactions <span class="hint" id="rtxTotalCount"></span></h2>
+            <span class="hint">Your most recent payment activity.</span>
+          </div>
+          <div class="rtx-tools">
+            <div class="search-box-v2">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" id="rtxSearch" placeholder="Search transactions" />
+            </div>
+            <select id="rtxStatusFilter">
+              <option value="">All statuses</option>
+              <option value="success">Successful</option>
+              <option value="pending">Pending</option>
+              <option value="failed">Failed</option>
+              <option value="refunded">Refunded</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" id="rtxExportBtn">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Export
             </button>
           </div>
-          <button class="btn btn-sm btn-block" data-goto="balances">View account details</button>
         </div>
-        <div class="balance-card disabled">
-          <div class="balance-card-top"><span class="flag">🇺🇸</span><span>USD balance</span></div>
-          <div class="balance-sub">Payout balance</div>
-          <div class="balance-amt-row"><span class="balance-amt">$ ******</span></div>
-          <div class="balance-unavailable">Not available on SwiftPay yet</div>
-          <button class="btn btn-sm btn-block" disabled>Get account details</button>
+        <div class="table-wrap">
+          <table id="rtxTable">
+            <thead><tr><th>Customer</th><th>Amount</th><th>Status</th><th>Payment method</th><th>Date</th><th>Reference</th></tr></thead>
+            <tbody></tbody>
+          </table>
         </div>
-        <div class="balance-card disabled">
-          <div class="balance-card-top"><span class="flag">🇬🇧</span><span>GBP balance</span></div>
-          <div class="balance-sub">Payout balance</div>
-          <div class="balance-amt-row"><span class="balance-amt">£ ******</span></div>
-          <div class="balance-unavailable">Not available on SwiftPay yet</div>
-          <button class="btn btn-sm btn-block" disabled>Get account details</button>
-        </div>
-        <div class="balance-card disabled">
-          <div class="balance-card-top"><span class="flag">🇪🇺</span><span>EUR balance</span></div>
-          <div class="balance-sub">Payout balance</div>
-          <div class="balance-amt-row"><span class="balance-amt">€ ******</span></div>
-          <div class="balance-unavailable">Not available on SwiftPay yet</div>
-          <button class="btn btn-sm btn-block" disabled>Get account details</button>
-        </div>
-      </div>
-
-      <div class="section-head">
-        <h2>Quick actions</h2>
-      </div>
-      <div class="quick-actions-grid">
-        <button class="qa-btn" data-goto="payments">
-          <span class="qa-ic"><svg class="icon" viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></span>
-          Make local &amp; international payments
-        </button>
-        <button class="qa-btn" id="qaPosBtn">
-          <span class="qa-ic"><svg class="icon" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="18" x2="8.01" y2="18"/></svg></span>
-          Request POS terminal
-        </button>
-        <button class="qa-btn" id="qaLinkBtn">
-          <span class="qa-ic"><svg class="icon" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.07 0l2.83-2.83a5 5 0 0 0-7.07-7.07L11.5 4.5"/><path d="M14 11a5 5 0 0 0-7.07 0L4.1 13.83a5 5 0 0 0 7.07 7.07L12.5 19.5"/></svg></span>
-          Create payment links
-        </button>
-        <button class="qa-btn" data-goto="payments" id="qaInvoiceBtn">
-          <span class="qa-ic"><svg class="icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg></span>
-          Create invoices
-        </button>
-      </div>
-
-      <div class="section-head">
-        <h2>Overview</h2>
-        <div class="ov-controls">
-          <select disabled title="Only NGN is available on SwiftPay"><option>NGN</option></select>
-          <select disabled title="Date filtering is not wired up yet"><option>Last 7 Days</option></select>
-          <span class="btn btn-ghost btn-sm" id="ovRangeStart">—</span>
-          <span class="btn btn-ghost btn-sm" id="ovRangeEnd">—</span>
-        </div>
-      </div>
-      <div class="chart-card" style="margin-bottom: 20px;">
-        <div class="overview-split">
-          <div class="ov-chart-side">
-            <div class="chart-canvas-wrap" style="height: 210px;">
-              <canvas id="ovRevenueChart"></canvas>
-            </div>
-          </div>
-          <div class="ov-stats-side">
-            <div class="ov-stat">
-              <div class="k-label">Total Value</div>
-              <div class="k-val3" id="ovTotalValue">₦0.00</div>
-            </div>
-            <div class="ov-stat">
-              <div class="k-label">Total Volume</div>
-              <div class="k-val3" id="ovTotalVolume">0</div>
-            </div>
-            <div class="ov-stat">
-              <div class="k-label">Total Settlements</div>
-              <div class="k-val3" id="ovTotalSettlements">₦0.00</div>
-              <button class="btn btn-ghost btn-sm" style="padding-left:0;" data-goto="balances">See all settlements</button>
-            </div>
-          </div>
+        <div class="empty" id="rtxEmpty" style="display:none;">No transactions yet — generate a payment link below to get started.</div>
+        <div class="rtx-foot">
+          <span id="rtxShowingText"></span>
+          <button class="btn btn-ghost btn-sm" data-goto="transactions">View all transactions →</button>
         </div>
       </div>
 
@@ -664,20 +718,6 @@
           </form>
           <div id="linkResult"></div>
         </div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-head">
-          <h2>Recent transactions</h2>
-          <button class="btn btn-ghost btn-sm" data-goto="transactions">See all transactions</button>
-        </div>
-        <div class="table-wrap">
-          <table id="recentTxTable">
-            <thead><tr><th>Reference</th><th>Status</th><th>Received</th><th>Date</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-        <div class="empty" id="recentTxEmpty" style="display:none;">No transactions yet — generate a payment link above to get started.</div>
       </div>
 
     </div>
