@@ -207,7 +207,7 @@
   .rtx-tools .search-box-v2 input { width: 100%; }
 }
 
-@media (max-width: 640px) {
+/* @media (max-width: 640px) { */
   .stat-grid { grid-template-columns: 1fr; }
   .ov-greet { font-size: 21px; }
   .big-num { font-size: 24px; }
@@ -215,7 +215,7 @@
   table#rtxTable th:nth-child(6), table#rtxTable td:nth-child(6) {
     display: none; /* hide Payment method + Reference columns on small screens */
   }
-}
+/* } */
 
 @media (max-width: 460px) {
   .range-tab span.label-full { display: none; }
