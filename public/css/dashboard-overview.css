@@ -27,8 +27,31 @@
 }
 .notif-badge.show { display: flex; }
 .topbar-right { display: flex; align-items: center; gap: 10px; flex: none; }
-.topbar-right .user-chip { cursor: default; }
 .topbar-right .who .role { font-size: 10.5px; color: var(--ink-faint); }
+
+/* ---------- Topbar: user menu (avatar -> logout dropdown) ---------- */
+.user-menu { position: relative; }
+.user-chip-btn {
+  border: none; background: transparent; cursor: pointer; font-family: var(--sans);
+}
+.user-chip-btn .chevron { width: 14px; height: 14px; color: var(--ink-faint); margin-left: 2px; transition: transform .15s ease; }
+.user-menu.open .user-chip-btn .chevron { transform: rotate(180deg); }
+.user-menu.open .user-chip-btn { border-radius: 20px; background: var(--brand-50); }
+.user-dropdown {
+  position: absolute; top: calc(100% + 8px); right: 0; min-width: 170px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md);
+  box-shadow: var(--shadow-md); padding: 6px; z-index: 70;
+  display: none; flex-direction: column; gap: 2px;
+}
+.user-menu.open .user-dropdown { display: flex; }
+.user-dropdown-item {
+  display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
+  border: none; background: transparent; color: var(--red); cursor: pointer;
+  font-family: var(--sans); font-size: 13px; font-weight: 600;
+  padding: 9px 10px; border-radius: var(--r-sm);
+}
+.user-dropdown-item:hover { background: var(--red-bg); }
+.user-dropdown-item .icon { width: 16px; height: 16px; }
 
 /* ---------- Sidebar groups ---------- */
 .sidebar-group + .sidebar-group { margin-top: 4px; }
