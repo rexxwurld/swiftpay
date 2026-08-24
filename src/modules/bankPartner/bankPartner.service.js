@@ -319,10 +319,12 @@ async function maintainAccountPools({
   }
 }
 
-const assignBankPoolAccount = (accountNumber) =>
+
+const assignBankPoolAccount = (accountNumber, amount) =>
   syncBankAccountStatus(
     accountNumber,
-    "assign"
+    "assign",
+    amount
   );
 
 const releaseBankPoolAccount = (accountNumber) =>
