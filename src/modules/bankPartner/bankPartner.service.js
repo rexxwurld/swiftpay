@@ -277,11 +277,15 @@ async function maintainAccountPools({
 // We DO NOT swallow the failure anymore.
 // =========================================================
 
-async function syncBankAccountStatus(accountNumber, action) {
+
+
+
+
+    async function syncBankAccountStatus(accountNumber, action, amount) {
   try {
     const response = await axios.patch(
       `${rexxPayBankBaseUrl}/api/v1/admin/pool-accounts/${accountNumber}/${action}`,
-      {},
+      amount != null ? { expectedAmount: amount } : {},
       {
         headers: {
           "x-admin-key": rexxPayBankAdminKey,
@@ -289,6 +293,7 @@ async function syncBankAccountStatus(accountNumber, action) {
         timeout: 15000,
       }
     );
+    
 
     return {
       success: true,
