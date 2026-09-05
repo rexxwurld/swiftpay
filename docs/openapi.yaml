@@ -105,6 +105,22 @@ components:
         platformFee: { type: integer }
         netAmount: { type: integer }
 
+    PaymentVerificationResult:
+      type: object
+      description: >
+        The actual shape returned by GET /payments/verify/{tx_ref}. This is a
+        purpose-built result, not the full Transaction document — it has no
+        _id, merchant, customer, currency, platformFee, or netAmount fields.
+      properties:
+        tx_ref: { type: string }
+        status:
+          type: string
+          enum: [pending, success, partial, over, failed, flagged]
+        amountExpected: { type: integer, nullable: true, description: "Minor units" }
+        amountReceived: { type: integer, nullable: true, description: "Minor units" }
+        accountNumber: { type: string, nullable: true }
+        mode: { type: string, nullable: true, enum: [test, live] }
+
     Payout:
       type: object
       properties:
@@ -249,14 +265,14 @@ paths:
               type: object
               required: [amount, customer]
               properties:
-                amount: { type: integer, description: "Minor units" }
+                amount: { type: number, description: "Major currency units (e.g. naira for NGN, not kobo). The server multiplies by 100 internally to derive the minor-unit amount stored on the transaction." }
                 customer:
                   type: object
                   properties:
                     email: { type: string }
                     name: { type: string }
                 tx_ref: { type: string, description: "Optional — supply your own reference, otherwise one is generated" }
-                redirect_url: { type: string }
+                redirect_url: { type: string, description: "Where SwiftPay redirects the customer's browser after a successful checkout (tx_ref and status query params are appended). If omitted, the checkout's /complete endpoint renders a static success page instead of redirecting." }
       responses:
         "201":
           description: Checkout link created
@@ -271,6 +287,8 @@ paths:
                     properties:
                       tx_ref: { type: string }
                       link: { type: string }
+                      accountNumber: { type: string }
+                      mode: { type: string, enum: [test, live] }
 
   /payments/verify/{tx_ref}:
     get:
@@ -281,7 +299,9 @@ paths:
         in the Authorization header. Do not use a browser query parameter
         such as ?status=successful as payment proof. A payment may only be
         fulfilled after this endpoint reports status=success and the merchant
-        confirms the verified amount matches the expected order amount.
+        confirms the verified amountReceived matches the expected order amount.
+        Note this endpoint returns a purpose-built result, not the full
+        Transaction object — see PaymentVerificationResult below.
       security: [{ ApiKeyAuth: [] }]
       parameters:
         - in: path
@@ -297,7 +317,7 @@ paths:
                 type: object
                 properties:
                   status: { type: boolean }
-                  data: { $ref: "#/components/schemas/Transaction" }
+                  data: { $ref: "#/components/schemas/PaymentVerificationResult" }
 
   /checkout/{token}/status:
     get:
@@ -311,19 +331,53 @@ paths:
       responses:
         "200":
           description: Checkout session status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      accountNumber: { type: string }
+                      bankName: { type: string, nullable: true }
+                      amountExpected: { type: integer, description: "Minor units" }
+                      mode: { type: string, enum: [test, live] }
+                      paymentStatus: { type: string, enum: [pending, success, partial, over, failed, flagged] }
+                      amountReceived: { type: integer, nullable: true, description: "Minor units; null until a payment lands" }
+        "404":
+          description: checkout_not_found
+        "410":
+          description: checkout_expired (only if no payment has been recorded yet)
 
   /checkout/{token}/complete:
     get:
       tags: [Checkout]
-      summary: Public, unauthenticated — marks/reads completion of a hosted-checkout session
+      summary: Public, unauthenticated — verifies a hosted-checkout session is paid and either redirects the browser or renders a static confirmation
+      description: >
+        Not a JSON endpoint. If the checkout was created with a redirect_url,
+        a successful payment (status success or over) triggers a 303 redirect
+        to that URL with tx_ref and status=successful appended as query
+        params — those params are a UX signal only, never proof of payment.
+        If no redirect_url was supplied, this renders a static "Payment
+        successful" HTML page instead of redirecting anywhere.
       parameters:
         - in: path
           name: token
           required: true
           schema: { type: string }
       responses:
+        "303":
+          description: Redirect to the merchant's redirect_url (only when one was supplied at initialize time)
         "200":
-          description: Checkout completion result
+          description: Static HTML success page (only when no redirect_url was supplied)
+        "404":
+          description: Checkout not found
+        "409":
+          description: Payment not yet confirmed, under review (flagged), or not successful
+        "500":
+          description: Unable to complete checkout
 
   /auth/register:
     post:
