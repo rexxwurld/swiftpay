@@ -2,10 +2,17 @@
 const { computeFee } = require('../src/utils/feeCalculator');
 
 describe('computeFee', () => {
-  it('applies percentage + fixed fee with no merchant override', () => {
-    // 100000 minor units, default 1.5% (150 bps) + 10000 fixed
+  it('applies percentage + fixed fee once amount is at/above the waiver threshold', () => {
+    // 300000 minor units (NGN 3,000) is above the NGN 2,500 waiver threshold
+    const { feeAmount, netAmount } = computeFee(300000);
+    expect(feeAmount).toBe(Math.floor((300000 * 150) / 10000) + 10000);
+    expect(netAmount).toBe(300000 - feeAmount);
+  });
+
+  it('waives the fixed fee below the threshold, charging percentage only', () => {
+    // 100000 minor units (NGN 1,000) is below the NGN 2,500 waiver threshold
     const { feeAmount, netAmount } = computeFee(100000);
-    expect(feeAmount).toBe(Math.floor((100000 * 150) / 10000) + 10000);
+    expect(feeAmount).toBe(Math.floor((100000 * 150) / 10000));
     expect(netAmount).toBe(100000 - feeAmount);
   });
 
@@ -22,7 +29,7 @@ describe('computeFee', () => {
   });
 
   it('never lets the fee exceed the amount it is taken from', () => {
-    const merchant = { fees: { percentageBps: 0, fixedMinor: 999999, capMinor: 0 } };
+    const merchant = { fees: { percentageBps: 0, fixedMinor: 999999, capMinor: 0, waiveFixedBelowMinor: 0 } };
     const { feeAmount, netAmount } = computeFee(100, merchant);
     expect(feeAmount).toBe(100);
     expect(netAmount).toBe(0);
