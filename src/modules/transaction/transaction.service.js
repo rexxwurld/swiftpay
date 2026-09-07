@@ -37,7 +37,17 @@ async function recordIncomingPayment({
 
   let flagReason = null;
 
-  if (amountReceived > merchantLimits.MAX_SINGLE_PAYMENT_MINOR) {
+  // Belt-and-braces: payment.service.js already rejects amount_below_minimum
+  // at initialize time, but a customer can still manually transfer an
+  // arbitrary amount to an already-assigned virtual account, bypassing
+  // that check entirely. Flag rather than reject outright - the money has
+  // already physically moved, so it needs a human decision (refund vs.
+  // manual credit), not a silent drop.
+  if (amountReceived < merchantLimits.MIN_SINGLE_PAYMENT_MINOR) {
+    flagReason = 'below_min_single_payment';
+  }
+
+  if (!flagReason && amountReceived > merchantLimits.MAX_SINGLE_PAYMENT_MINOR) {
     flagReason = 'exceeds_max_single_payment';
   }
 
