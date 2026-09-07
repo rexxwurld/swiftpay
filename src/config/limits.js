@@ -14,7 +14,7 @@ const GLOBAL_DEFAULTS = {
   // config/fees.js) eats a disproportionate, sometimes majority, share
   // of the transaction. Not plan-tiered - kept as one global floor
   // regardless of merchant plan.
-  MIN_SINGLE_PAYMENT_MINOR: Number(process.env.MIN_SINGLE_PAYMENT_MINOR || 5000), // ₦50.00
+  MIN_SINGLE_PAYMENT_MINOR: Number(process.env.MIN_SINGLE_PAYMENT_MINOR || 10000), // ₦100.00
 
   // Single incoming payment above this (in minor units, i.e. kobo) gets
   // flagged for manual review instead of auto-credited.
