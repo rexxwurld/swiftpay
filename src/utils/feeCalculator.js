@@ -2,22 +2,6 @@
 const { DEFAULT_FEE } = require('../config/fees');
 const { getPlanConfig } = require('../config/plans');
 
-/**
- * Computes the platform fee owed on an amount, in minor units.
- *
- * Resolution order (highest precedence last):
- *   1. Global DEFAULT_FEE (src/config/fees.js)
- *   2. The merchant's plan tier (src/config/plans.js) - this is new;
- *      previously merchant.plan was stored but never actually read here.
- *   3. merchant.fees - a per-merchant override, for a negotiated rate
- *      that doesn't fit neatly into a plan tier. Still wins over the
- *      plan default, same as before.
- *
- * @param {number} amountMinor - the amount the fee is calculated against
- *   (post-split, i.e. what's actually landing as the merchant's share).
- * @param {object|null} merchant - Merchant document, or null to force defaults.
- * @returns {{ feeAmount: number, netAmount: number }}
- */
 function computeFee(amountMinor, merchant = null) {
   if (!Number.isInteger(amountMinor) || amountMinor < 0) {
     throw new Error('invalid_fee_base_amount');
@@ -44,13 +28,20 @@ function computeFee(amountMinor, merchant = null) {
       ? plan.capMinor
       : DEFAULT_FEE.capMinor;
 
-  let feeAmount = Math.floor((amountMinor * percentageBps) / 10000) + fixedMinor;
+  const waiveFixedBelowMinor = Number.isFinite(override.waiveFixedBelowMinor)
+    ? override.waiveFixedBelowMinor
+    : Number.isFinite(plan.waiveFixedBelowMinor)
+      ? plan.waiveFixedBelowMinor
+      : DEFAULT_FEE.waiveFixedBelowMinor;
+
+  const applyFixed = amountMinor >= waiveFixedBelowMinor;
+
+  let feeAmount = Math.floor((amountMinor * percentageBps) / 10000) + (applyFixed ? fixedMinor : 0);
 
   if (capMinor > 0) {
     feeAmount = Math.min(feeAmount, capMinor);
   }
 
-  // Never let a fee exceed (or zero out) the amount it's taken from.
   feeAmount = Math.max(0, Math.min(feeAmount, amountMinor));
 
   const netAmount = amountMinor - feeAmount;
