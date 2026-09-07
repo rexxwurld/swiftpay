@@ -6,6 +6,7 @@ const Checkout = require('../checkout/checkout.model');
 
 const { createCustomer } = require('../customer/customer.service');
 const { assignVirtualAccount, releaseVirtualAccount } = require('../virtualAccount/virtualAccount.service');
+const limits = require('../../config/limits');
 
 function validateRedirectUrl(redirectUrl) {
   if (!redirectUrl) {
@@ -28,6 +29,7 @@ function validateRedirectUrl(redirectUrl) {
 
 async function initializePayment({
   merchantId,
+  merchantPlan,
   amount,
   customer,
   tx_ref,
@@ -41,6 +43,12 @@ async function initializePayment({
 
   if (amount === undefined || amount === null || isNaN(amount) || Number(amount) <= 0) {
     throw new Error('amount_required');
+  }
+
+  const requestedAmountMinor = Math.round(Number(amount) * 100);
+  const { MIN_SINGLE_PAYMENT_MINOR } = limits.getLimitsForMerchant({ plan: merchantPlan });
+  if (requestedAmountMinor < MIN_SINGLE_PAYMENT_MINOR) {
+    throw new Error('amount_below_minimum');
   }
 
   if (!customer?.email) {
@@ -58,7 +66,7 @@ async function initializePayment({
     phone: customer.phone || null,
   });
 
-  const amountMinor = Math.round(Number(amount) * 100);
+  const amountMinor = requestedAmountMinor;
 
   let assigned;
 
