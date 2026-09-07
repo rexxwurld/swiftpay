@@ -119,7 +119,7 @@ async function processEvent(eventId) {
       transaction,
       duplicate,
     } = await recordIncomingPayment({
-      reference: bankReference,
+      reference: merchantReference,
       merchantId,
       customerId,
       virtualAccountId,
