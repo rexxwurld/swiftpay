@@ -8,6 +8,14 @@
 const { getPlanConfig } = require('./plans');
 
 const GLOBAL_DEFAULTS = {
+  // Single incoming payment below this (in minor units, i.e. kobo) is
+  // rejected at initialize time / flagged if it somehow still lands -
+  // below this the fixed component of the platform fee (see
+  // config/fees.js) eats a disproportionate, sometimes majority, share
+  // of the transaction. Not plan-tiered - kept as one global floor
+  // regardless of merchant plan.
+  MIN_SINGLE_PAYMENT_MINOR: Number(process.env.MIN_SINGLE_PAYMENT_MINOR || 5000), // ₦50.00
+
   // Single incoming payment above this (in minor units, i.e. kobo) gets
   // flagged for manual review instead of auto-credited.
   MAX_SINGLE_PAYMENT_MINOR: Number(process.env.MAX_SINGLE_PAYMENT_MINOR || 500_000_00), // ₦500,000
@@ -74,6 +82,7 @@ module.exports = {
   getLimitsForMerchant(merchant) {
     const planLimits = getPlanConfig(merchant?.plan).limits || {};
     return {
+      MIN_SINGLE_PAYMENT_MINOR: GLOBAL_DEFAULTS.MIN_SINGLE_PAYMENT_MINOR, // not plan-tiered; same floor for every plan
       MAX_SINGLE_PAYMENT_MINOR: planLimits.MAX_SINGLE_PAYMENT_MINOR ?? GLOBAL_DEFAULTS.MAX_SINGLE_PAYMENT_MINOR,
       MAX_DAILY_INBOUND_MINOR: planLimits.MAX_DAILY_INBOUND_MINOR ?? GLOBAL_DEFAULTS.MAX_DAILY_INBOUND_MINOR,
       VELOCITY_WINDOW_MINUTES: GLOBAL_DEFAULTS.VELOCITY_WINDOW_MINUTES, // not plan-tiered; structuring window stays constant
