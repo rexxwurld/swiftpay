@@ -13,6 +13,7 @@ async function initialize(req, res) {
 
     const result = await initializePayment({
       merchantId: req.merchant.id,
+      merchantPlan: req.merchant.plan,
       amount,
       customer,
       tx_ref,
