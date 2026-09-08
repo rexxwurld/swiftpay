@@ -7,6 +7,13 @@ const refundSchema = new mongoose.Schema(
     transaction: { type: mongoose.Schema.Types.ObjectId, ref: 'Transaction', required: true },
     reference: { type: String, required: true, unique: true },
 
+    // Caller-supplied (body.idempotencyKey or an Idempotency-Key header),
+    // same convention as payout.model.js. Lets a merchant safely retry an
+    // identical refund request (browser retry, network timeout, worker
+    // restart) without risking a second real refund - see requestRefund()
+    // in refund.service.js, which checks this before creating anything.
+    idempotencyKey: { type: String, default: null },
+
     amount: { type: Number, required: true },
     currency: { type: String, required: true, default: 'NGN' },
     reason: { type: String, default: null },
@@ -63,6 +70,17 @@ const refundSchema = new mongoose.Schema(
     confirmedAt: { type: Date, default: null },
   },
   { timestamps: true }
+);
+
+// Partial unique index (only applies when idempotencyKey is an actual
+// string) - identical shape to payout.model.js's index on the same
+// three fields, and for the same reason: two refund requests for the
+// same merchant+key+mode can never both create a document, even if they
+// race each other, so this is what a duplicate-key error (code 11000)
+// in requestRefund() actually means.
+refundSchema.index(
+  { merchant: 1, idempotencyKey: 1, mode: 1 },
+  { unique: true, partialFilterExpression: { idempotencyKey: { $type: 'string' } } }
 );
 
 module.exports = mongoose.model('Refund', refundSchema);
