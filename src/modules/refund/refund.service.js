@@ -3,9 +3,11 @@ const mongoose = require('mongoose');
 const crypto = require('crypto');
 const Refund = require('./refund.model');
 const Transaction = require('../transaction/transaction.model');
+const Merchant = require('../merchant/merchant.model');
 const { debitWallet, creditWallet } = require('../wallet/wallet.service');
 const { postDoubleEntry } = require('../ledger/ledger.service');
 const { sendRefundInstruction, simulateRefundInstruction } = require('../bankPartner/rexxPayBankClient');
+const { dispatchMerchantWebhook } = require('../../utils/merchantWebhook');
 const auditLog = require('../audit/auditLog.service');
 
 function toMajorUnits(amountMinorUnits) {
@@ -24,13 +26,34 @@ function toMajorUnits(amountMinorUnits) {
 async function requestRefund({
   merchantId,
   transactionId,
+  reference: paymentReference, // caller's own transaction/payment reference - alternative to transactionId (SwiftPay's internal id), since a merchant integrating over the API generally only ever has the reference it got back from initialize()/verify(), never our internal _id.
   amount,
   reason,
   destinationBankCode,
   destinationAccountNumber,
   destinationAccountName,
+  idempotencyKey = null,
 }) {
-  const transaction = await Transaction.findById(transactionId);
+  if (!transactionId && !paymentReference) {
+    throw new Error('transaction_reference_required');
+  }
+
+  // Idempotency check FIRST, before touching the transaction at all -
+  // same ordering as payout.service.js's requestPayout(). A retried
+  // identical request (browser retry, network timeout, worker restart)
+  // returns the already-created refund instead of re-validating and
+  // re-claiming refund headroom a second time.
+  if (idempotencyKey) {
+    const existing = await Refund.findOne({ merchant: merchantId, idempotencyKey });
+    if (existing) {
+      return existing;
+    }
+  }
+
+  const transaction = transactionId
+    ? await Transaction.findById(transactionId)
+    : await Transaction.findOne({ reference: paymentReference });
+
   if (!transaction) throw new Error('transaction_not_found');
   if (transaction.merchant.toString() !== merchantId.toString()) {
     throw new Error('transaction_not_found');
@@ -68,7 +91,7 @@ async function requestRefund({
     // starting its session.
     const claimed = await Transaction.findOneAndUpdate(
       {
-        _id: transactionId,
+        _id: transaction._id,
         $expr: {
           $gte: [
             { $subtract: ['$amountReceived', '$refundedAmount'] },
@@ -90,8 +113,9 @@ async function requestRefund({
       [
         {
           merchant: merchantId,
-          transaction: transactionId,
+          transaction: transaction._id,
           reference,
+          idempotencyKey,
           amount: refundAmount,
           currency: transaction.currency,
           mode,
@@ -122,6 +146,15 @@ async function requestRefund({
   } catch (err) {
     await session.abortTransaction();
     session.endSession();
+
+    // Same race payout.service.js guards against: two concurrent
+    // requests both passed the pre-check above (neither had committed
+    // yet), so the DB's unique index is what actually decides - the
+    // loser gets a duplicate-key error here, not a second refund.
+    if (err.code === 11000 && idempotencyKey) {
+      const raced = await Refund.findOne({ merchant: merchantId, idempotencyKey });
+      if (raced) return raced;
+    }
     throw err;
   }
 
@@ -131,7 +164,7 @@ async function requestRefund({
     action: 'refund.requested',
     entityType: 'Refund',
     entityRef: refund._id.toString(),
-    metadata: { transactionId, amount: refundAmount, mode },
+    metadata: { transactionId: transaction._id.toString(), amount: refundAmount, mode },
   });
 
   // Submit to the bank - this call only confirms the bank RECEIVED the
@@ -236,6 +269,18 @@ async function confirmRefundOutcome({ reference, success, providerRef, failureRe
       metadata: { providerRef },
     });
 
+    // Generic notification, same shape/mechanism as transaction.success -
+    // SwiftPay doesn't know or care who's listening on the other end
+    // (Campaign Platform, a future shop, a future school); it just
+    // reports that a refund it was asked to process has resolved.
+    const merchant = await Merchant.findById(refund.merchant);
+    if (merchant) {
+      dispatchMerchantWebhook(merchant, {
+        type: 'refund.succeeded',
+        data: refund.toObject(),
+      }).catch(() => {});
+    }
+
     return refund;
   }
 
@@ -325,6 +370,14 @@ async function reverseRefund(refundId, reason, providerRef = null) {
     severity: 'warning',
     metadata: { reason, mode: lock.mode },
   });
+
+  const merchant = await Merchant.findById(lock.merchant);
+  if (merchant) {
+    dispatchMerchantWebhook(merchant, {
+      type: 'refund.failed',
+      data: lock.toObject(),
+    }).catch(() => {});
+  }
 
   return lock;
 }
