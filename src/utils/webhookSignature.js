@@ -6,18 +6,44 @@
 const crypto = require('crypto');
 const { bankWebhookSecret } = require('../config/env');
 
+function getPayloadBody(payload) {
+  if (Buffer.isBuffer(payload)) {
+    return payload;
+  }
+
+  if (typeof payload === 'string') {
+    return Buffer.from(payload, 'utf8');
+  }
+
+  return Buffer.from(JSON.stringify(payload), 'utf8');
+}
+
 function signPayload(payload) {
-  const body = typeof payload === 'string' ? payload : JSON.stringify(payload);
-  return crypto.createHmac('sha512', bankWebhookSecret).update(body).digest('hex');
+  const body = getPayloadBody(payload);
+
+  return crypto
+    .createHmac('sha512', bankWebhookSecret)
+    .update(body)
+    .digest('hex');
 }
 
 function verifySignature(payload, signature) {
+  if (!signature) return false;
+
   const expected = signPayload(payload);
-  // Constant-time compare to avoid timing attacks
-  const a = Buffer.from(expected);
-  const b = Buffer.from(signature || '');
+
+  const receivedSignature = String(signature).replace(/^sha512=/i, '');
+
+  const a = Buffer.from(expected, 'utf8');
+  const b = Buffer.from(receivedSignature, 'utf8');
+
   if (a.length !== b.length) return false;
+
+  // Constant-time compare to avoid timing attacks.
   return crypto.timingSafeEqual(a, b);
 }
 
-module.exports = { signPayload, verifySignature };
+module.exports = {
+  signPayload,
+  verifySignature
+};
