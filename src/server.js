@@ -4,12 +4,36 @@ const connectDB = require('./config/db');
 const { port } = require('./config/env');
 const { ensureDefaultBankPartners } = require('./modules/bankPartner/bankPartner.service');
 const { redriveStuckEvents } = require('./modules/webhook/webhook.processor');
+const { redriveStuckMerchantWebhookDeliveries } = require('./utils/merchantWebhook');
 const { startWebhookWorker } = require('./queue/webhookWorker');
 const {
   startMerchantWebhookWorker,
 } = require('./queue/merchantWebhookWorker');
 
 const logger = require('./utils/logger');
+
+// How often to sweep for events/deliveries that fell off the Redis-backed
+// queue (Redis was briefly down, Redis lost data, etc) and never got
+// picked up by a worker. Previously this only ran once, at server boot -
+// which meant anything that fell off the queue *while the server kept
+// running* (not just at startup) had no recovery path until the next
+// deploy/restart. Running it on a timer instead closes that gap.
+const REDRIVE_SWEEP_INTERVAL_MS = Number(process.env.REDRIVE_SWEEP_INTERVAL_MINUTES || 5) * 60 * 1000;
+
+async function runRedriveSweep() {
+  try {
+    const redrivenEvents = await redriveStuckEvents();
+    const redrivenDeliveries = await redriveStuckMerchantWebhookDeliveries();
+    if (redrivenEvents > 0 || redrivenDeliveries > 0) {
+      logger.info(
+        { redrivenEvents, redrivenDeliveries },
+        '[server] redrive sweep restored stuck item(s) onto durable queue(s)'
+      );
+    }
+  } catch (err) {
+    logger.error({ err }, '[server] redrive sweep failed');
+  }
+}
 
 async function start() {
   await connectDB();
@@ -25,12 +49,10 @@ async function start() {
   // e.g. via a one-off script or an authenticated admin route, and only
   // top it up again when the pool actually runs low.
 
-  // Redis-backed events (queue/webhookQueue.js) survive a crash on
-  // their own now. This sweep only catches the edge case of an event
-  // that was persisted in Mongo but never made it onto the queue (e.g.
-  // Redis was briefly unreachable at enqueue time).
-  const redriven = await redriveStuckEvents();
-  if (redriven > 0) logger.info({ redriven }, '[server] redrove stuck webhook event(s) onto durable queue');
+  // Run once immediately at boot (same as before), then keep running on
+  // a timer for as long as the process stays up - see REDRIVE_SWEEP_INTERVAL_MS.
+  await runRedriveSweep();
+  setInterval(runRedriveSweep, REDRIVE_SWEEP_INTERVAL_MS);
 
   // Runs the BullMQ worker in the same process by default (fine for a
   // single small deployment / free-tier hosting). Set
