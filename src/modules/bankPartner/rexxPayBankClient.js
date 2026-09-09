@@ -45,11 +45,19 @@ async function sendPayoutInstruction({
         validateStatus: (status) => (status >= 200 && status < 300) || status === 402,
       });
 
+      const data = response.data?.data || null;
+      const accepted = response.data?.status === true;
+      const providerState = data?.status || null;
+
       return {
         httpStatus: response.status,
-        success: response.data?.status === true,
+        accepted,
         duplicate: !!response.data?.duplicate,
-        payout: response.data?.data || null,
+        success: providerState === 'successful',
+        final: providerState === 'successful' || providerState === 'failed',
+        providerReference: data?.providerRef || data?.providerReference || null,
+        failureReason: data?.failureReason || null,
+        payout: data,
       };
     } catch (err) {
       lastErr = err;
@@ -102,9 +110,13 @@ async function simulatePayoutInstruction({
 
   return {
     httpStatus: 200,
+    accepted: true,
     success: true,
+    final: true,
     duplicate: false,
-    payout: { providerReference: `test_${idempotencyKey}` },
+    providerReference: `test_${idempotencyKey}`,
+    failureReason: null,
+    payout: { providerReference: `test_${idempotencyKey}`, status: 'successful' },
   };
 }
 
