@@ -83,65 +83,6 @@ async function sendPayoutInstruction({
   err.ambiguousOutcome = true;
   throw err;
 }
-// --- Status polling (for reconciliation) --------------------------------
-//
-// Used when we submitted a payout/refund but never got a confirmation
-// webhook back (bank outage, dropped webhook, etc). Instead of leaving the
-// record stuck forever, scripts/reconcile-outbound.js calls this to ask
-// RexxPay Bank directly: "what's the real status of this reference?"
-//
-// NOTE: this assumes RexxPay Bank exposes a GET status-check endpoint
-// mirroring its POST submission endpoints. Confirm the exact path/response
-// shape against the real provider's API docs before relying on this in
-// live mode - adjust the URL below if it differs.
-async function checkPayoutStatus(reference) {
-  const signature = signPayload({ reference });
-  const response = await axios.get(`${rexxPayBankBaseUrl}/api/v1/payouts/${reference}`, {
-    headers: { 'x-swiftpay-signature': signature },
-    timeout: 15000,
-    validateStatus: (status) => status >= 200 && status < 500,
-  });
-
-  if (response.status === 404) {
-    return { found: false };
-  }
-
-  const data = response.data?.data || null;
-  const providerState = data?.status || null;
-
-  return {
-    found: true,
-    final: providerState === 'successful' || providerState === 'failed',
-    success: providerState === 'successful',
-    providerReference: data?.providerRef || data?.providerReference || null,
-    failureReason: data?.failureReason || null,
-  };
-}
-
-// Same idea, for refunds.
-async function checkRefundStatus(reference) {
-  const signature = signPayload({ reference });
-  const response = await axios.get(`${rexxPayBankBaseUrl}/api/v1/refunds/${reference}`, {
-    headers: { 'x-swiftpay-signature': signature },
-    timeout: 15000,
-    validateStatus: (status) => status >= 200 && status < 500,
-  });
-
-  if (response.status === 404) {
-    return { found: false };
-  }
-
-  const data = response.data?.data || null;
-  const providerState = data?.status || null;
-
-  return {
-    found: true,
-    final: providerState === 'successful' || providerState === 'failed',
-    success: providerState === 'successful',
-    providerReference: data?.providerRef || data?.providerReference || null,
-    failureReason: data?.failureReason || null,
-  };
-}
 
 // TEST MODE ONLY. Makes NO network call - no real bank, no real money,
 // ever. Mirrors the real client's return shape exactly so payout.service.js
@@ -283,6 +224,65 @@ async function simulateRefundInstruction({ idempotencyKey }) {
   };
 }
 
+// --- Status polling (for reconciliation) --------------------------------
+//
+// Used when we submitted a payout/refund but never got a confirmation
+// webhook back (bank outage, dropped webhook, etc). Instead of leaving the
+// record stuck forever, scripts/reconcile-outbound.js calls this to ask
+// RexxPay Bank directly: "what's the real status of this reference?"
+//
+// NOTE: this assumes RexxPay Bank exposes a GET status-check endpoint
+// mirroring its POST submission endpoints. Confirm the exact path/response
+// shape against the real provider's API docs before relying on this in
+// live mode - adjust the URL below if it differs.
+async function checkPayoutStatus(reference) {
+  const signature = signPayload({ reference });
+  const response = await axios.get(`${rexxPayBankBaseUrl}/api/v1/payouts/${reference}`, {
+    headers: { 'x-swiftpay-signature': signature },
+    timeout: 15000,
+    validateStatus: (status) => status >= 200 && status < 500,
+  });
+
+  if (response.status === 404) {
+    return { found: false };
+  }
+
+  const data = response.data?.data || null;
+  const providerState = data?.status || null;
+
+  return {
+    found: true,
+    final: providerState === 'successful' || providerState === 'failed',
+    success: providerState === 'successful',
+    providerReference: data?.providerRef || data?.providerReference || null,
+    failureReason: data?.failureReason || null,
+  };
+}
+
+// Same idea, for refunds.
+async function checkRefundStatus(reference) {
+  const signature = signPayload({ reference });
+  const response = await axios.get(`${rexxPayBankBaseUrl}/api/v1/refunds/${reference}`, {
+    headers: { 'x-swiftpay-signature': signature },
+    timeout: 15000,
+    validateStatus: (status) => status >= 200 && status < 500,
+  });
+
+  if (response.status === 404) {
+    return { found: false };
+  }
+
+  const data = response.data?.data || null;
+  const providerState = data?.status || null;
+
+  return {
+    found: true,
+    final: providerState === 'successful' || providerState === 'failed',
+    success: providerState === 'successful',
+    providerReference: data?.providerRef || data?.providerReference || null,
+    failureReason: data?.failureReason || null,
+  };
+}
 
 module.exports = {
   sendPayoutInstruction,
