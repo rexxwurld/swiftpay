@@ -29,8 +29,15 @@ async function receiveBankWebhook(req, res) {
     return res.status(401).json({ status: false, message: 'invalid_signature' });
   }
 
-  const event = await enqueue({ rawBody: req.body, signature });
-
+  const event = await enqueue({
+  rawBody: req.body,
+  signature,
+  providerEventId:
+    req.body.eventId ||
+    req.body.providerEventId ||
+    req.body.id ||
+    req.body.reference
+});
   // 202: accepted for processing, not yet confirmed applied. The merchant
   // finds out the real outcome via their own webhook/polling of /transactions.
   return res.status(202).json({ status: true, message: 'accepted', eventId: event._id });
