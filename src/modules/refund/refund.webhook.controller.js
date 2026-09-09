@@ -19,7 +19,7 @@ const auditLog = require('../audit/auditLog.service');
 async function receiveRefundWebhook(req, res) {
   const signature = req.headers['x-bank-signature'];
 
-  if (!verifySignature(req.body, signature)) {
+  if (!verifySignature(req.rawBody || req.body, signature)) {
     await auditLog.record({
       actorType: 'bank_partner',
       action: 'refund_webhook.invalid_signature',
