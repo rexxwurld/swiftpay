@@ -39,7 +39,7 @@ const ledgerEntrySchema = new mongoose.Schema(
     // What caused this entry, for traceability back to the source record.
     sourceType: {
       type: String,
-      enum: ['incoming_payment', 'payout', 'refund', 'adjustment', 'reversal', 'settlement'],
+      enum: ['incoming_payment', 'payout', 'withdrawal', 'refund', 'adjustment', 'reversal', 'settlement'],
       required: true,
     },
     sourceRef: { type: String, required: true }, // e.g. Transaction._id or Payout._id
