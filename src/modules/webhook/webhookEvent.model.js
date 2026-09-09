@@ -14,6 +14,10 @@ const mongoose = require('mongoose');
 const webhookEventSchema = new mongoose.Schema(
   {
     source: { type: String, default: 'bank_partner' },
+    providerEventId: {
+  type: String,
+  required: true
+},
     rawBody: { type: mongoose.Schema.Types.Mixed, required: true },
     signature: { type: String },
 
@@ -28,6 +32,10 @@ const webhookEventSchema = new mongoose.Schema(
     processedAt: { type: Date },
   },
   { timestamps: true }
+  webhookEventSchema.index(
+  { source: 1, providerEventId: 1 },
+  { unique: true }
+);
 );
 
 module.exports = mongoose.model('WebhookEvent', webhookEventSchema);
