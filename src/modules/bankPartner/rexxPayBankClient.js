@@ -24,6 +24,65 @@ async function sendPayoutInstruction({
   if (!rexxPayBankPayoutSecret) {
     throw new Error('rexxpay_bank_payout_secret_not_configured');
   }
+
+  const payload = {
+    idempotencyKey,
+    linkedService: linkedServiceName,
+    destinationAccountNumber,
+    destinationBank,
+    destinationAccountName,
+    amount: amountMajorUnits,
+  };
+
+  const signature = signPayload(payload);
+  let lastErr;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const response = await axios.post(`${rexxPayBankBaseUrl}/api/v1/payouts`, payload, {
+        headers: { 'x-swiftpay-signature': signature, 'Content-Type': 'application/json' },
+        timeout: 45000,
+        validateStatus: (status) => (status >= 200 && status < 300) || status === 402,
+      });
+
+      const data = response.data?.data || null;
+      const accepted = response.data?.status === true;
+      const providerState = data?.status || null;
+
+      return {
+        httpStatus: response.status,
+        accepted,
+        duplicate: !!response.data?.duplicate,
+        success: providerState === 'successful',
+        final: providerState === 'successful' || providerState === 'failed',
+        providerReference: data?.providerRef || data?.providerReference || null,
+        failureReason: data?.failureReason || null,
+        payout: data,
+      };
+    } catch (err) {
+      lastErr = err;
+      const status = err.response?.status;
+      const isRetryable = RETRYABLE_STATUS.has(status) || err.code === 'ECONNABORTED' || !err.response;
+
+      if (!isRetryable || attempt === MAX_ATTEMPTS) {
+        break;
+      }
+
+      const retryAfterHeader = Number(err.response?.headers?.['retry-after']);
+      const backoff = Number.isFinite(retryAfterHeader) && retryAfterHeader > 0
+        ? retryAfterHeader * 1000
+        : BASE_DELAY_MS * 2 ** (attempt - 1) + Math.random() * 300;
+
+      await sleep(backoff);
+    }
+  }
+
+  const message = lastErr.response?.data?.message || lastErr.message;
+  const err = new Error(`rexxpay_bank_payout_call_failed: ${message}`);
+  err.cause = lastErr;
+  err.ambiguousOutcome = true;
+  throw err;
+}
 // --- Status polling (for reconciliation) --------------------------------
 //
 // Used when we submitted a payout/refund but never got a confirmation
@@ -82,64 +141,6 @@ async function checkRefundStatus(reference) {
     providerReference: data?.providerRef || data?.providerReference || null,
     failureReason: data?.failureReason || null,
   };
-}
-  const payload = {
-    idempotencyKey,
-    linkedService: linkedServiceName,
-    destinationAccountNumber,
-    destinationBank,
-    destinationAccountName,
-    amount: amountMajorUnits,
-  };
-
-  const signature = signPayload(payload);
-  let lastErr;
-
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    try {
-      const response = await axios.post(`${rexxPayBankBaseUrl}/api/v1/payouts`, payload, {
-        headers: { 'x-swiftpay-signature': signature, 'Content-Type': 'application/json' },
-        timeout: 45000,
-        validateStatus: (status) => (status >= 200 && status < 300) || status === 402,
-      });
-
-      const data = response.data?.data || null;
-      const accepted = response.data?.status === true;
-      const providerState = data?.status || null;
-
-      return {
-        httpStatus: response.status,
-        accepted,
-        duplicate: !!response.data?.duplicate,
-        success: providerState === 'successful',
-        final: providerState === 'successful' || providerState === 'failed',
-        providerReference: data?.providerRef || data?.providerReference || null,
-        failureReason: data?.failureReason || null,
-        payout: data,
-      };
-    } catch (err) {
-      lastErr = err;
-      const status = err.response?.status;
-      const isRetryable = RETRYABLE_STATUS.has(status) || err.code === 'ECONNABORTED' || !err.response;
-
-      if (!isRetryable || attempt === MAX_ATTEMPTS) {
-        break;
-      }
-
-      const retryAfterHeader = Number(err.response?.headers?.['retry-after']);
-      const backoff = Number.isFinite(retryAfterHeader) && retryAfterHeader > 0
-        ? retryAfterHeader * 1000
-        : BASE_DELAY_MS * 2 ** (attempt - 1) + Math.random() * 300;
-
-      await sleep(backoff);
-    }
-  }
-
-  const message = lastErr.response?.data?.message || lastErr.message;
-  const err = new Error(`rexxpay_bank_payout_call_failed: ${message}`);
-  err.cause = lastErr;
-  err.ambiguousOutcome = true;
-  throw err;
 }
 
 // TEST MODE ONLY. Makes NO network call - no real bank, no real money,
