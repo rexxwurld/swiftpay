@@ -5,7 +5,7 @@ const Payout = require('./payout.model');
 const { reserveFunds, finalizeReservedDebit, releaseReservedFunds, getOrCreateWallet } = require('../wallet/wallet.service');
 const { postDoubleEntry } = require('../ledger/ledger.service');
 const { findActiveByCodeForMerchant } = require('../recipient/recipient.service');
-const { dispatchMerchantWebhook } = require('../../utils/merchantWebhook');   
+const { dispatchMerchantWebhook } = require('../../utils/merchantWebhook');
 const { sendPayoutInstruction, simulatePayoutInstruction } = require('../bankPartner/rexxPayBankClient');
 const auditLog = require('../audit/auditLog.service');
 const limits = require('../../config/limits');
@@ -161,6 +161,15 @@ async function requestPayout({
         severity: 'critical',
         metadata: { error: err.message },
       });
+
+      // Generic notification, same shape/mechanism as refund.service.js's
+      // dispatch calls: SwiftPay doesn't know or care who's listening on
+      // the other end; it just reports that a payout it was asked to
+      // process has landed in a state that needs human follow-up.
+      const merchant = await Merchant.findById(payout.merchant);
+      if (merchant) {
+        dispatchMerchantWebhook(merchant, { type: 'payout.ambiguous', data: payout.toObject() }).catch(() => {});
+      }
     } else {
       await reversePayout(payout, err.message);
     }
@@ -192,6 +201,11 @@ async function finalizePayoutSuccess(payout, providerReference) {
       entityRef: payout._id.toString(),
       metadata: { amount: payout.amount, providerReference, mode: payout.mode },
     });
+
+    const merchant = await Merchant.findById(payout.merchant);
+    if (merchant) {
+      dispatchMerchantWebhook(merchant, { type: 'payout.successful', data: payout.toObject() }).catch(() => {});
+    }
   } catch (err) {
     await session.abortTransaction();
     session.endSession();
@@ -232,6 +246,11 @@ async function reversePayout(payout, reason) {
       severity: 'warning',
       metadata: { reason, mode: payout.mode },
     });
+
+    const merchant = await Merchant.findById(payout.merchant);
+    if (merchant) {
+      dispatchMerchantWebhook(merchant, { type: 'payout.failed', data: payout.toObject() }).catch(() => {});
+    }
   } catch (err) {
     await session.abortTransaction();
     session.endSession();
