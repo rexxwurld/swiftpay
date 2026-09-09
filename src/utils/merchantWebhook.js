@@ -1,11 +1,12 @@
-// src/utils/merchantWebhook.js
-
 const crypto = require('crypto');
-const axios = require('axios');
-const auditLog = require('../modules/audit/auditLog.service');
 
-const MAX_ATTEMPTS = 5;
-const TIMEOUT_MS = 8000;
+const MerchantWebhookDelivery = require(
+  '../modules/webhook/merchantWebhookDelivery.model'
+);
+
+const {
+  enqueueMerchantWebhookDelivery,
+} = require('../queue/merchantWebhookQueue');
 
 function signPayload(rawBody, secret) {
   return crypto
@@ -15,12 +16,6 @@ function signPayload(rawBody, secret) {
 }
 
 function getEventId(event) {
-  /*
-   * Prefer an ID supplied by the caller.
-   *
-   * If none exists, generate a deterministic ID from the event data.
-   * This means retries of the same event can use the same ID.
-   */
   if (event?.id) {
     return String(event.id);
   }
@@ -40,18 +35,27 @@ function getEventId(event) {
     .digest('hex');
 }
 
-async function dispatchMerchantWebhook(merchant, event, attempt = 1) {
-  if (!merchant?.webhookUrl) return;
+async function dispatchMerchantWebhook(merchant, event) {
+  if (!merchant?.webhookUrl) {
+    return null;
+  }
 
   if (!merchant?.webhookSecret) {
     console.warn(
       `[merchantWebhook] merchant ${merchant._id} has webhookUrl but no webhookSecret - skipping`
     );
-    return;
+
+    return null;
   }
 
   const eventId = getEventId(event);
 
+  /*
+   * Generate the exact body once.
+   *
+   * This is important because retries must send the same signed
+   * payload instead of generating a new sentAt/signature each time.
+   */
   const rawBody = JSON.stringify({
     id: eventId,
     event: event.type,
@@ -64,51 +68,42 @@ async function dispatchMerchantWebhook(merchant, event, attempt = 1) {
     merchant.webhookSecret
   );
 
+  /*
+   * Persist the delivery BEFORE putting it on Redis.
+   *
+   * If Redis is temporarily unavailable, the MongoDB record still
+   * exists and can be redriven later.
+   */
+  const delivery = await MerchantWebhookDelivery.create({
+    merchant: merchant._id,
+    eventType: event.type,
+    rawBody,
+    signature,
+    eventId,
+    webhookUrl: merchant.webhookUrl,
+    status: 'pending',
+  });
+
   try {
-    await axios.post(merchant.webhookUrl, rawBody, {
-      headers: {
-        'Content-Type': 'application/json',
-        'X-SwiftPay-Signature': signature,
-        'X-SwiftPay-Event-Id': eventId,
-      },
-      timeout: TIMEOUT_MS,
-      validateStatus: (status) =>
-        status >= 200 && status < 300,
-    });
+    await enqueueMerchantWebhookDelivery(delivery._id);
   } catch (err) {
-    if (attempt >= MAX_ATTEMPTS) {
-      await auditLog.record({
-        actorType: 'system',
-        actorRef: 'merchant_webhook_dispatcher',
-        action: 'merchant_webhook.delivery_failed_permanently',
-        severity: 'critical',
-        metadata: {
-          merchantId: merchant._id.toString(),
-          eventType: event.type,
-          eventId,
-          error: err.message,
-        },
-      });
-
-      return;
-    }
-
-    const backoffMs = 2000 * attempt;
-
-    setTimeout(() => {
-      dispatchMerchantWebhook(
-        merchant,
-        {
-          ...event,
-          eventId,
-        },
-        attempt + 1
-      ).catch(() => {});
-    }, backoffMs);
+    /*
+     * Do not delete the Mongo record.
+     *
+     * The delivery remains pending and can be picked up by a
+     * recovery/redrive process later.
+     */
+    console.error(
+      '[merchantWebhook] failed to enqueue durable delivery',
+      err
+    );
   }
+
+  return delivery;
 }
 
 module.exports = {
   dispatchMerchantWebhook,
   signPayload,
+  getEventId,
 };
