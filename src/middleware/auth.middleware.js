@@ -27,6 +27,13 @@ async function requireApiKey(req, res, next) {
   if (sessionToken) {
     try {
       const decoded = jwt.verify(sessionToken, jwtSecret);
+      // SECURITY: a 2FA-pending temp token (see auth.service.js loginMerchant)
+      // is signed with this same secret but must NEVER be accepted as a full
+      // session - it proves only that the password was correct, not the
+      // second factor. Reject any token carrying a `purpose` claim here.
+      if (decoded.purpose) {
+        return res.status(401).json({ status: false, message: 'invalid_session' });
+      }
       const merchant = await Merchant.findById(decoded.id);
       if (!merchant) throw new Error('merchant_not_found');
       req.merchant = { id: merchant._id, businessName: merchant.businessName, mode: null, plan: merchant.plan };
