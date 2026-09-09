@@ -23,11 +23,13 @@ const payoutSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ['pending', 'reserved', 'processing', 'successful', 'failed', 'ambiguous', 'reversed'],
+      enum: ['pending', 'reserved', 'processing', 'finalizing', 'successful', 'failed', 'ambiguous', 'reversing', 'reversed'],
       default: 'pending',
     },
     failureReason: { type: String },
     providerRef: { type: String, default: null },
+    submittedAt: { type: Date, default: null },
+    completedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

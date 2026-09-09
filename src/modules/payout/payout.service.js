@@ -141,10 +141,29 @@ async function requestPayout({
       destinationAccountName,
     });
 
-    if (result.success) {
-      await finalizePayoutSuccess(payout, result.payout?.providerReference || null);
+    if (!result.accepted) {
+      await reversePayout(payout._id, result.failureReason || 'bank_rejected_submission');
     } else {
-      await reversePayout(payout, result.payout?.failureReason || 'bank_declined');
+      payout.providerRef = result.providerReference || payout.providerRef;
+
+      if (result.final === true) {
+        if (result.success === true) {
+          await finalizePayoutSuccess(payout._id, result.providerReference || null);
+        } else {
+          await reversePayout(payout._id, result.failureReason || 'bank_declined');
+        }
+      } else {
+        payout.status = 'processing';
+        await payout.save();
+
+        const freshMerchant = await Merchant.findById(payout.merchant);
+        if (freshMerchant) {
+          dispatchMerchantWebhook(freshMerchant, {
+            type: 'payout.processing',
+            data: payout.toObject(),
+          }).catch(() => {});
+        }
+      }
     }
   } catch (err) {
     if (err.ambiguousOutcome) {
@@ -178,47 +197,82 @@ async function requestPayout({
   return payout;
 }
 
-async function finalizePayoutSuccess(payout, providerReference) {
+async function finalizePayoutSuccess(payoutId, providerReference = null) {
+  const payout = await Payout.findOneAndUpdate(
+    { _id: payoutId, status: { $in: ['processing', 'ambiguous'] } },
+    { $set: { status: 'finalizing', ...(providerReference ? { providerRef: providerReference } : {}) } },
+    { new: true }
+  );
+
+  if (!payout) return null;
+
   const session = await mongoose.startSession();
   try {
     session.startTransaction();
 
-    const wallet = await getOrCreateWallet(payout.merchant, payout.currency, payout.mode, session);
+    const wallet = await getOrCreateWallet(
+      payout.merchant,
+      payout.currency,
+      payout.mode,
+      session
+    );
+
     await finalizeReservedDebit(wallet._id, payout.amount, session);
 
     payout.status = 'successful';
-    payout.providerRef = providerReference;
+    if (providerReference) payout.providerRef = providerReference;
+    payout.completedAt = new Date();
     await payout.save({ session });
 
     await session.commitTransaction();
     session.endSession();
-
-    await auditLog.record({
-      actorType: 'system',
-      actorRef: 'payout_service',
-      action: 'payout.successful',
-      entityType: 'Payout',
-      entityRef: payout._id.toString(),
-      metadata: { amount: payout.amount, providerReference, mode: payout.mode },
-    });
-
-    const merchant = await Merchant.findById(payout.merchant);
-    if (merchant) {
-      dispatchMerchantWebhook(merchant, { type: 'payout.successful', data: payout.toObject() }).catch(() => {});
-    }
   } catch (err) {
     await session.abortTransaction();
     session.endSession();
+    await Payout.updateOne(
+      { _id: payout._id, status: 'finalizing' },
+      { $set: { status: 'processing', failureReason: `finalization_failed: ${err.message}` } }
+    );
     throw err;
   }
+
+  await auditLog.record({
+    actorType: 'system',
+    actorRef: 'payout_service',
+    action: 'payout.successful',
+    entityType: 'Payout',
+    entityRef: payout._id.toString(),
+    metadata: { amount: payout.amount, providerReference: payout.providerRef, mode: payout.mode },
+  });
+
+  const merchant = await Merchant.findById(payout.merchant);
+  if (merchant) {
+    dispatchMerchantWebhook(merchant, { type: 'payout.successful', data: payout.toObject() }).catch(() => {});
+  }
+
+  return payout;
 }
 
-async function reversePayout(payout, reason) {
+async function reversePayout(payoutId, reason) {
+  const payout = await Payout.findOneAndUpdate(
+    { _id: payoutId, status: { $in: ['processing', 'ambiguous'] } },
+    { $set: { status: 'reversing', failureReason: reason } },
+    { new: true }
+  );
+
+  if (!payout) return null;
+
   const session = await mongoose.startSession();
   try {
     session.startTransaction();
 
-    const wallet = await getOrCreateWallet(payout.merchant, payout.currency, payout.mode, session);
+    const wallet = await getOrCreateWallet(
+      payout.merchant,
+      payout.currency,
+      payout.mode,
+      session
+    );
+
     await releaseReservedFunds(wallet._id, payout.amount, session);
 
     await postDoubleEntry({
@@ -231,31 +285,61 @@ async function reversePayout(payout, reason) {
       credit: { accountType: 'merchant_wallet', accountRef: payout.merchant.toString(), description: 'Payout reversal - funds returned' },
       session,
     });
+
     payout.status = 'failed';
-    payout.failureReason = reason;
+    payout.completedAt = new Date();
     await payout.save({ session });
+
     await session.commitTransaction();
     session.endSession();
-
-    await auditLog.record({
-      actorType: 'system',
-      actorRef: 'payout_service',
-      action: 'payout.reversed',
-      entityType: 'Payout',
-      entityRef: payout._id.toString(),
-      severity: 'warning',
-      metadata: { reason, mode: payout.mode },
-    });
-
-    const merchant = await Merchant.findById(payout.merchant);
-    if (merchant) {
-      dispatchMerchantWebhook(merchant, { type: 'payout.failed', data: payout.toObject() }).catch(() => {});
-    }
   } catch (err) {
     await session.abortTransaction();
     session.endSession();
+    await Payout.updateOne(
+      { _id: payout._id, status: 'reversing' },
+      { $set: { failureReason: `reversal_failed: ${err.message}` } }
+    );
     throw err;
   }
+
+  await auditLog.record({
+    actorType: 'system',
+    actorRef: 'payout_service',
+    action: 'payout.reversed',
+    entityType: 'Payout',
+    entityRef: payout._id.toString(),
+    severity: 'warning',
+    metadata: { reason, mode: payout.mode },
+  });
+
+  const merchant = await Merchant.findById(payout.merchant);
+  if (merchant) {
+    dispatchMerchantWebhook(merchant, { type: 'payout.failed', data: payout.toObject() }).catch(() => {});
+  }
+
+  return payout;
+}
+
+async function confirmPayoutOutcome({ reference, success, providerRef = null, failureReason = null }) {
+  const payout = await Payout.findOne({ reference });
+  if (!payout) {
+    await auditLog.record({
+      actorType: 'system',
+      actorRef: 'payout_webhook',
+      action: 'payout.webhook_unknown_reference',
+      severity: 'warning',
+      metadata: { reference },
+    });
+    return null;
+  }
+
+  if (payout.status === 'successful' || payout.status === 'failed') return payout;
+
+  if (success) {
+    return finalizePayoutSuccess(payout._id, providerRef || payout.providerRef);
+  }
+
+  return reversePayout(payout._id, failureReason || 'bank_declined_after_submission');
 }
 
 async function listForMerchant(merchantId, mode = null) {
@@ -310,4 +394,4 @@ async function requestBulkPayout({ merchantId, currency = 'NGN', items, mode }) 
   return { results, successCount, failureCount: items.length - successCount };
 }
 
-module.exports = { requestPayout, requestBulkPayout, listForMerchant };
+module.exports = { requestPayout, requestBulkPayout, listForMerchant, confirmPayoutOutcome, finalizePayoutSuccess, reversePayout };
