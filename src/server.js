@@ -5,6 +5,10 @@ const { port } = require('./config/env');
 const { ensureDefaultBankPartners } = require('./modules/bankPartner/bankPartner.service');
 const { redriveStuckEvents } = require('./modules/webhook/webhook.processor');
 const { startWebhookWorker } = require('./queue/webhookWorker');
+const {
+  startMerchantWebhookWorker,
+} = require('./queue/merchantWebhookWorker');
+
 const logger = require('./utils/logger');
 
 async function start() {
@@ -33,9 +37,14 @@ async function start() {
   // WEBHOOK_WORKER_IN_PROCESS=false and run `node src/queue/webhookWorker.js`
   // as a separate process/dyno once webhook volume needs to scale
   // independently of the API.
+  
   if (process.env.WEBHOOK_WORKER_IN_PROCESS !== 'false') {
-    startWebhookWorker();
-    logger.info('[server] webhook worker started in-process');
+  startWebhookWorker();
+  startMerchantWebhookWorker();
+
+  logger.info(
+    '[server] webhook workers started in-process'
+  );
   }
 
   app.listen(port, () => {
