@@ -17,7 +17,7 @@ const auditLog = require('../audit/auditLog.service');
 async function receiveBankWebhook(req, res) {
   const signature = req.headers['x-bank-signature'];
 
-  if (!verifySignature(req.body, signature)) {
+  if (!verifySignature(req.rawBody || req.body, signature)) {
     // Do not process. Do not credit. Log for fraud review in a real system.
     await auditLog.record({
       actorType: 'bank_partner',
