@@ -30,10 +30,10 @@ const {
 const MAX_ATTEMPTS = 5;
 
 // Persists the event, then hands it to the durable Redis-backed BullMQ queue.
-async function enqueue({ rawBody, signature }) {
-  const event = await WebhookEvent.create({
+async function enqueue({ rawBody, signature, providerEventId }) {  const event = await WebhookEvent.create({
     rawBody,
     signature,
+  providerEventId,
     status: "queued",
   });
 
