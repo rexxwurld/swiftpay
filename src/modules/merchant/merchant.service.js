@@ -85,4 +85,14 @@ async function regenerateWebhookSecret(merchantId) {
   return { webhookSecret };
 }
 
-module.exports = { getProfile, updateWebhookUrl, regenerateSecretKey, regenerateWebhookSecret };
+async function setSettlementAccount(merchantId, { bankCode, accountNumber, accountName }) {
+  if (!bankCode || !accountNumber || !accountName) throw new Error('settlement_account_required');
+  const merchant = await Merchant.findById(merchantId);
+  if (!merchant) throw new Error('merchant_not_found');
+  merchant.settlementAccount = { bankCode: String(bankCode).trim(), accountNumber: String(accountNumber).trim(), accountName: String(accountName).trim(), verified: false, verifiedAt: null };
+  await merchant.save();
+  await auditLog.record({ actorType: 'merchant', actorRef: merchantId.toString(), action: 'merchant.settlement_account.updated', entityType: 'Merchant', entityRef: merchantId.toString(), severity: 'warning' });
+  return merchant;
+}
+
+module.exports = { getProfile, updateWebhookUrl, regenerateSecretKey, regenerateWebhookSecret, setSettlementAccount };

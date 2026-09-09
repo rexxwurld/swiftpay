@@ -16,6 +16,14 @@ const merchantSchema = new mongoose.Schema(
     webhookUrl: { type: String },
     webhookSecret: { type: String },
 
+    settlementAccount: {
+      bankCode: { type: String, default: null },
+      accountNumber: { type: String, default: null },
+      accountName: { type: String, default: null },
+      verified: { type: Boolean, default: false },
+      verifiedAt: { type: Date, default: null },
+    },
+
     // Test and live keypairs both exist simultaneously (Paystack-style).
     // Which one is "active" for a request is determined by the key
     // prefix the caller sends, not by a merchant-level toggle - so

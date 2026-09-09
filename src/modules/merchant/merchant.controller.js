@@ -1,5 +1,5 @@
 // src/modules/merchant/merchant.controller.js
-const { getProfile, updateWebhookUrl, regenerateSecretKey, regenerateWebhookSecret } = require('./merchant.service');
+const { getProfile, updateWebhookUrl, regenerateSecretKey, regenerateWebhookSecret, setSettlementAccount } = require('./merchant.service');
 
 async function profile(req, res) {
   const merchant = await getProfile(req.merchant.id);
@@ -43,4 +43,12 @@ async function regenerateWebhook(req, res) {
   }
 }
 
-module.exports = { profile, updateWebhook, regenerateKey, regenerateWebhook };
+async function updateSettlementAccount(req, res) {
+  try {
+    const merchant = await setSettlementAccount(req.merchant.id, req.body);
+    res.json({ status: true, message: 'Settlement account saved and is awaiting verification.', data: merchant });
+  } catch (err) { res.status(400).json({ status: false, message: err.message }); }
+}
+
+module.exports = { profile, updateWebhook, regenerateKey, regenerateWebhook, updateSettlementAccount };
+
