@@ -81,6 +81,18 @@ router.get('/pool-status', requireAdminKey, async (req, res) => {
 //
 //   PATCH /api/admin/merchants/:id/fees
 //   { "percentageBps": 100, "fixedMinor": 5000, "capMinor": 150000 }
+router.patch('/merchants/:id/settlement-account/verify', requireAdminKey, async (req, res) => {
+  try {
+    const merchant = await Merchant.findById(req.params.id);
+    if (!merchant) return res.status(404).json({ status: false, message: 'merchant_not_found' });
+    if (!merchant.settlementAccount?.bankCode || !merchant.settlementAccount?.accountNumber || !merchant.settlementAccount?.accountName) return res.status(400).json({ status: false, message: 'settlement_account_required' });
+    merchant.settlementAccount.verified = true;
+    merchant.settlementAccount.verifiedAt = new Date();
+    await merchant.save();
+    res.json({ status: true, message: 'Settlement account verified.', data: merchant });
+  } catch (err) { res.status(400).json({ status: false, message: err.message }); }
+});
+
 router.patch('/merchants/:id/fees', requireAdminKey, async (req, res) => {
   try {
     const { percentageBps, fixedMinor, capMinor } = req.body;
