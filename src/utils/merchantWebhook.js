@@ -102,8 +102,36 @@ async function dispatchMerchantWebhook(merchant, event) {
   return delivery;
 }
 
+// Re-enqueue any delivery that's sitting in 'pending' or 'delivering' in
+// Mongo but may have fallen out of the Redis-backed queue (Redis was down
+// at enqueue time, Redis itself restarted/lost data, etc). Re-adding an
+// already-queued job is a safe no-op - enqueueMerchantWebhookDelivery uses
+// the delivery's own _id as the BullMQ job ID, so this never creates a
+// duplicate delivery, it only restores ones that fell off the queue.
+//
+// Meant to be called periodically (see src/server.js), not just once at
+// boot - a delivery can fall off the queue at any point while the server
+// keeps running, not only at startup.
+async function redriveStuckMerchantWebhookDeliveries() {
+  const stuck = await MerchantWebhookDelivery.find({
+    status: { $in: ['pending', 'delivering'] },
+  });
+
+  for (const delivery of stuck) {
+    await enqueueMerchantWebhookDelivery(delivery._id).catch((err) => {
+      console.error(
+        '[merchantWebhook] failed to redrive stuck delivery onto durable queue',
+        { deliveryId: delivery._id.toString(), err }
+      );
+    });
+  }
+
+  return stuck.length;
+}
+
 module.exports = {
   dispatchMerchantWebhook,
   signPayload,
   getEventId,
+  redriveStuckMerchantWebhookDeliveries,
 };
