@@ -941,6 +941,34 @@ function wireRegenButton(btnId, resultId, mode) {
 wireRegenButton('regenTestKeyBtn', 'regenTestKeyResult', 'test');
 wireRegenButton('regenLiveKeyBtn', 'regenLiveKeyResult', 'live');
 
+document.getElementById('regenWebhookSecretBtn').addEventListener('click', async () => {
+  const confirmed = window.confirm(
+    'Generate a new webhook signing secret? Your current one will stop verifying ' +
+    'immediately — update it in your receiving app before continuing.'
+  );
+  if (!confirmed) return;
+
+  try {
+    const res = await api('/api/merchant/regenerate-webhook-secret', { method: 'POST' });
+    const resultBox = document.getElementById('regenWebhookSecretResult');
+    resultBox.innerHTML = `
+      <div class="key-reveal">
+        <div class="warn">Store this now — it will not be shown again.</div>
+        <div class="key-row">
+          <div class="k-label">Webhook secret</div>
+          <div class="link-row">
+            <div class="k-val" id="webhookSecretVal">${esc(res.data.webhookSecret)}</div>
+            <button type="button" class="btn btn-sm copy-btn" id="webhookSecretCopy">Copy</button>
+          </div>
+        </div>
+      </div>`;
+    document.getElementById('webhookSecretCopy').addEventListener('click', () => copyToClipboard(res.data.webhookSecret));
+    toast('New webhook secret generated');
+  } catch (err) {
+    toast(err.message.replace(/_/g, ' '), true);
+  }
+});
+
 document.getElementById('qaPosBtn')?.addEventListener('click', () => {
   toast('POS terminals — coming soon');
 });
