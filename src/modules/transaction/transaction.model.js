@@ -32,7 +32,22 @@ const transactionSchema = new mongoose.Schema(
     settledAt: { type: Date, default: null },
     availableAt: { type: Date, default: null },
     settlementBatch: { type: mongoose.Schema.Types.ObjectId, ref: 'SettlementBatch', default: null },
+  settlementLockId: {
+  type: mongoose.Schema.Types.ObjectId,
+  default: null,
+  index: true,
+},
 
+settlementLockPhase: {
+  type: String,
+  enum: ['settle', 'make_available', null],
+  default: null,
+},
+
+settlementLockAt: {
+  type: Date,
+  default: null,
+},
     channel: { type: String, default: 'dedicated_virtual_account' },
     bankReference: { type: String },
 
