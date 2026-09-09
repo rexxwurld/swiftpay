@@ -1200,6 +1200,15 @@
             </div>
             <button type="submit" class="btn btn-accent">Save</button>
           </form>
+
+          <div class="key-block" style="margin-top:16px;">
+            <div class="key-block-head">
+              <div class="title">Webhook signing secret</div>
+              <button class="btn btn-sm btn-danger-outline" id="regenWebhookSecretBtn">Regenerate</button>
+            </div>
+            <p class="desc">Used to sign every webhook SwiftPay sends you (X-SwiftPay-Signature header) — shown once, never retrievable after. Yours was shown once at signup; if you didn't save it, generate a new one below. The old one stops verifying immediately.</p>
+            <div id="regenWebhookSecretResult"></div>
+          </div>
         </div>
       </div>
 
