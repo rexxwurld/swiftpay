@@ -31,6 +31,9 @@ const disputeRoutes = require('./modules/dispute/dispute.routes');
 const settlementRoutes = require('./modules/settlement/settlement.routes');
 const demoRoutes = require('./modules/demo/demo.routes');
 const refundWebhookRoutes = require('./modules/refund/refund.webhook.routes');
+const payoutWebhookRoutes = require('./modules/payout/payout.webhook.routes');
+const withdrawalRoutes = require('./modules/withdrawal/withdrawal.routes');
+const withdrawalWebhookRoutes = require('./modules/withdrawal/withdrawal.webhook.routes');
 
 const {
   notFound,
@@ -145,6 +148,7 @@ apiV1.use('/transactions', transactionRoutes);
 apiV1.use('/webhooks', webhookLimiter, webhookRoutes);
 apiV1.use('/payouts', payoutRoutes);
 apiV1.use('/refunds', refundRoutes);
+apiV1.use('/withdrawals', withdrawalRoutes);
 apiV1.use('/subaccounts', subaccountRoutes);
 apiV1.use('/recipients', recipientRoutes);
 apiV1.use('/admin', adminRoutes);
@@ -154,6 +158,8 @@ apiV1.use('/subscriptions', subscriptionRoutes);
 apiV1.use('/disputes', disputeRoutes);
 apiV1.use('/demo', demoLimiter, demoRoutes);
 apiV1.use('/webhooks/refunds', webhookLimiter, refundWebhookRoutes);
+apiV1.use('/webhooks/payouts', webhookLimiter, payoutWebhookRoutes);
+apiV1.use('/webhooks/withdrawals', webhookLimiter, withdrawalWebhookRoutes);
 
 
 
