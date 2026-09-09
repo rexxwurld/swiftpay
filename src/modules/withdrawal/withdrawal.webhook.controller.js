@@ -4,7 +4,7 @@ const auditLog = require('../audit/auditLog.service');
 
 async function receiveWithdrawalWebhook(req, res) {
   const signature = req.headers['x-bank-signature'];
-  if (!verifySignature(req.body, signature)) {
+  if (!verifySignature(req.rawBody || req.body, signature)) {
     await auditLog.record({ actorType: 'bank_partner', action: 'withdrawal_webhook.invalid_signature', severity: 'critical', ip: req.ip });
     return res.status(401).json({ status: false, message: 'invalid_signature' });
   }
