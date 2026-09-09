@@ -1,5 +1,5 @@
 // src/modules/merchant/merchant.controller.js
-const { getProfile, updateWebhookUrl, regenerateSecretKey } = require('./merchant.service');
+const { getProfile, updateWebhookUrl, regenerateSecretKey, regenerateWebhookSecret } = require('./merchant.service');
 
 async function profile(req, res) {
   const merchant = await getProfile(req.merchant.id);
@@ -30,4 +30,17 @@ async function regenerateKey(req, res) {
   }
 }
 
-module.exports = { profile, updateWebhook, regenerateKey };
+async function regenerateWebhook(req, res) {
+  try {
+    const result = await regenerateWebhookSecret(req.merchant.id);
+    res.json({
+      status: true,
+      message: 'New webhook secret generated. Store it now - it will not be shown again. Any webhook already in flight will fail signature verification until you update your receiving app with this value.',
+      data: result,
+    });
+  } catch (err) {
+    res.status(400).json({ status: false, message: err.message });
+  }
+}
+
+module.exports = { profile, updateWebhook, regenerateKey, regenerateWebhook };
