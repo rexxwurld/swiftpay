@@ -654,6 +654,16 @@ paths:
                 destinationBankCode: { type: string }
                 destinationAccountNumber: { type: string }
                 destinationAccountName: { type: string }
+                idempotencyKey:
+                  type: string
+                  description: >
+                    Also accepted as an `Idempotency-Key` header instead of
+                    a body field. Store this — it's the value that comes
+                    back as `data.idempotencyKey` on payout.* webhooks, and
+                    is what a merchant must match webhook deliveries
+                    against (see the webhook contract notes above `/webhooks/bank`).
+                    `reference` is NOT accepted as a request field; SwiftPay
+                    always assigns the payout's `reference` itself.
       responses:
         "201":
           description: Payout created
@@ -914,6 +924,15 @@ paths:
                 destinationBankCode: { type: string }
                 destinationAccountNumber: { type: string }
                 destinationAccountName: { type: string }
+                idempotencyKey:
+                  type: string
+                  description: >
+                    Also accepted as an `Idempotency-Key` header instead of
+                    a body field. Unlike payouts, refund.* webhooks can be
+                    matched on `data.reference` directly (SwiftPay's
+                    response to this call already returns that value) —
+                    idempotencyKey here is purely for dedup, not required
+                    for webhook matching.
       responses:
         "201":
           description: Refund created
@@ -1275,6 +1294,31 @@ paths:
   # double-charge, double-credit, decrement stock twice, or increment coupons twice.
   # Acknowledge valid events with HTTP 2xx. Never expose API or webhook secrets
   # to browser/client-side code.
+  #
+  # Event catalogue — `event` is one of:
+  #
+  #   transaction.success   data = { tx_ref, status, amountReceived, currency }
+  #     `tx_ref` is the merchant's own reference, exactly as sent to
+  #     POST /transactions/initialize — SwiftPay never rewrites it.
+  #     Match against it directly.
+  #
+  #   refund.succeeded / refund.failed   data = Refund object (reference,
+  #     amount, currency, status, failureReason, destinationBankCode, ...)
+  #     `data.reference` is safe to match against: it's the value SwiftPay
+  #     itself generated and already handed back in the POST /refunds
+  #     response body, so a merchant that stored that response's
+  #     `reference` has the same value here.
+  #
+  #   payout.successful / payout.failed / payout.ambiguous   data = Payout
+  #     object (reference, idempotencyKey, amount, currency, status,
+  #     failureReason, destinationBankCode, ...)
+  #     ⚠ `data.reference` here is SwiftPay's OWN generated ID
+  #     (`po_...`) — it is NOT the value the merchant sent as `reference`
+  #     on POST /payouts (that field is currently accepted but ignored).
+  #     Match on `data.idempotencyKey` instead — that's the only field
+  #     that round-trips the merchant's own identifier. A merchant that
+  #     matches payout webhooks on `data.reference` will never find a
+  #     row and every payout webhook will silently no-op.
 
   /webhooks/bank:
     post:
