@@ -15,6 +15,7 @@
     "reactivate-expired-accounts": "node scripts/reactivate-expired-accounts.js",
     "reconcile": "node scripts/reconcile.js",
     "fetch-and-reconcile": "node scripts/fetch-and-reconcile.js",
+    "reconcile-outbound": "node scripts/reconcile-outbound.js",
     "run-settlement": "node scripts/run-settlement.js",
     "generate-invoices": "node scripts/generate-invoices.js",
     "test": "jest --runInBand",
