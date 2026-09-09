@@ -51,7 +51,13 @@ app.set('trust proxy', 1);
 app.use(cors());
 app.use(morgan('dev'));
 app.use(cookieParser());
-app.use(express.json());
+app.use(express.json({
+  verify: (req, res, buf) => {
+    if (req.originalUrl.startsWith('/api/v1/webhooks')) {
+      req.rawBody = Buffer.from(buf);
+    }
+  }
+}));
 app.use(generalLimiter);
 app.use(helmet({
   contentSecurityPolicy: {
