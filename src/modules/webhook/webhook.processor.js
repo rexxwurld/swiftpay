@@ -23,19 +23,58 @@ const {
 
 const auditLog = require("../audit/auditLog.service");
 const logger = require("../../utils/logger");
+
 const {
   enqueueWebhookEvent,
 } = require("../../queue/webhookQueue");
 
 const MAX_ATTEMPTS = 5;
 
-// Persists the event, then hands it to the durable Redis-backed BullMQ queue.
-async function enqueue({ rawBody, signature, providerEventId }) {  const event = await WebhookEvent.create({
-    rawBody,
-    signature,
+/*
+ * Persists the webhook event before processing it.
+ *
+ * providerEventId is used to prevent the same provider event from being
+ * persisted more than once.
+ */
+async function enqueue({
+  rawBody,
+  signature,
   providerEventId,
-    status: "queued",
-  });
+}) {
+  if (!providerEventId) {
+    throw new Error("missing_provider_event_id");
+  }
+
+  let event;
+
+  try {
+    event = await WebhookEvent.create({
+      source: "bank_partner",
+      providerEventId,
+      rawBody,
+      signature,
+      status: "queued",
+    });
+  } catch (err) {
+    /*
+     * MongoDB duplicate-key error means this exact provider event has
+     * already been received.
+     *
+     * This is expected when a bank retries a webhook.
+     */
+    if (err.code === 11000) {
+      event = await WebhookEvent.findOne({
+        source: "bank_partner",
+        providerEventId,
+      });
+
+      if (event) {
+        return event;
+      }
+    }
+
+    throw err;
+  }
 
   try {
     await enqueueWebhookEvent(event._id);
@@ -53,16 +92,38 @@ async function enqueue({ rawBody, signature, providerEventId }) {  const event =
 }
 
 async function processEvent(eventId) {
-  const event = await WebhookEvent.findById(eventId);
+  /*
+   * Atomically claim the event.
+   *
+   * This prevents two workers from processing the same webhook
+   * simultaneously.
+   */
+  const event = await WebhookEvent.findOneAndUpdate(
+    {
+      _id: eventId,
+      status: "queued",
+    },
+    {
+      $set: {
+        status: "processing",
+      },
+      $inc: {
+        attempts: 1,
+      },
+    },
+    {
+      new: true,
+    }
+  );
 
-  if (!event || event.status === "processed") {
+  /*
+   * Another worker may already be processing the event.
+   *
+   * In that case we simply stop here.
+   */
+  if (!event) {
     return;
   }
-
-  event.status = "processing";
-  event.attempts += 1;
-
-  await event.save();
 
   try {
     const {
@@ -82,12 +143,12 @@ async function processEvent(eventId) {
 
     const account = await findByAccountNumber(accountNumber);
 
-    // The SwiftPay-side virtual account must still be assigned.
-    //
-    // The BANK itself is responsible for immediately deactivating the
-    // actual bank account when the money arrives. This check protects
-    // SwiftPay from accepting another payment against an account that
-    // SwiftPay has already consumed/released.
+    /*
+     * The SwiftPay-side virtual account must still be assigned.
+     *
+     * The BANK is responsible for deactivating its actual bank account.
+     * SwiftPay only updates its local virtual-account state.
+     */
     if (!account || account.status !== "assigned") {
       await auditLog.record({
         actorType: "system",
@@ -129,6 +190,13 @@ async function processEvent(eventId) {
       bankReference,
     });
 
+    /*
+     * Only perform the post-payment actions when this is a new
+     * transaction.
+     *
+     * recordIncomingPayment already protects the financial transaction
+     * itself using its unique reference/idempotency logic.
+     */
     if (
       !duplicate &&
       (
@@ -136,21 +204,8 @@ async function processEvent(eventId) {
         transaction.status === "over"
       )
     ) {
-
       // ============================================================
       // SWIFTPAY-SIDE ACCOUNT DEACTIVATION
-      // ============================================================
-      //
-      // IMPORTANT:
-      //
-      // The BANK is supposed to deactivate its real bank account
-      // immediately when the deposit arrives.
-      //
-      // This call only deactivates SwiftPay's LOCAL virtual-account
-      // record so SwiftPay's pool state matches the completed checkout.
-      //
-      // It is intentionally done AFTER the transaction is recorded.
-      // If it fails, the payment itself is NOT rolled back.
       // ============================================================
 
       try {
@@ -163,18 +218,15 @@ async function processEvent(eventId) {
           { accountNumber },
           "[webhook.processor] SwiftPay virtual account marked deactivated after payment"
         );
-
       } catch (deactivateError) {
-
-        // The payment has already been recorded successfully.
-        //
-        // DO NOT throw here.
-        //
-        // Throwing would cause BullMQ to retry the webhook even though
-        // the transaction already exists.
-        //
-        // The bank is independently responsible for deactivating its
-        // actual account immediately after receiving the money.
+        /*
+         * The payment has already been recorded successfully.
+         *
+         * Do NOT throw here.
+         *
+         * Throwing would cause the webhook to be retried even though
+         * the financial transaction already exists.
+         */
         logger.error(
           {
             accountNumber,
@@ -214,7 +266,10 @@ async function processEvent(eventId) {
           },
         }).catch((err) => {
           logger.error(
-            { err },
+            {
+              err,
+              transactionId: transaction._id.toString(),
+            },
             "[webhook.processor] merchant webhook dispatch failed"
           );
         });
@@ -239,9 +294,7 @@ async function processEvent(eventId) {
     event.processedAt = new Date();
 
     await event.save();
-
   } catch (err) {
-
     event.lastError = err.message;
 
     event.status =
@@ -259,6 +312,7 @@ async function processEvent(eventId) {
         severity: "critical",
         metadata: {
           eventId: event._id.toString(),
+          providerEventId: event.providerEventId,
           error: err.message,
         },
       });
@@ -281,6 +335,7 @@ async function redriveStuckEvents() {
         {
           err,
           eventId: event._id.toString(),
+          providerEventId: event.providerEventId,
         },
         "[webhook.processor] failed to redrive stuck event onto durable queue"
       );
