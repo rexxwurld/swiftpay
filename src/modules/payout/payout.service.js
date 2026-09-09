@@ -5,6 +5,7 @@ const Payout = require('./payout.model');
 const { reserveFunds, finalizeReservedDebit, releaseReservedFunds, getOrCreateWallet } = require('../wallet/wallet.service');
 const { postDoubleEntry } = require('../ledger/ledger.service');
 const { findActiveByCodeForMerchant } = require('../recipient/recipient.service');
+const { dispatchMerchantWebhook } = require('../../utils/merchantWebhook');   
 const { sendPayoutInstruction, simulatePayoutInstruction } = require('../bankPartner/rexxPayBankClient');
 const auditLog = require('../audit/auditLog.service');
 const limits = require('../../config/limits');
