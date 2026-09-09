@@ -17,6 +17,87 @@ const { SUPPORTED_CURRENCIES } = require('../../config/currencies');
 const { runSettlementCycle } = require('../settlement/settlement.service');
 const { generateDueInvoices, markOverdueInvoices } = require('../subscription/subscription.service');
 
+// ================= STUCK PAYMENT VISIBILITY & MANUAL RESOLUTION =================
+// Companion to scripts/reconcile-outbound.js. That script auto-resolves
+// anything the bank can confirm one way or the other. These routes cover
+// the rest: (1) seeing what's stuck at all, and (2) a human manually
+// deciding an outcome for the rare case where even the bank's status
+// check comes back inconclusive (e.g. RexxPay Bank support confirms the
+// outcome over a phone call/support ticket, not through the API).
+const Payout = require('../payout/payout.model');
+const Withdrawal = require('../withdrawal/withdrawal.model');
+const Refund = require('../refund/refund.model');
+const { confirmPayoutOutcome } = require('../payout/payout.service');
+const { confirmWithdrawalOutcome } = require('../withdrawal/withdrawal.service');
+const { confirmRefundOutcome } = require('../refund/refund.service');
+
+// Visit:
+//   /api/admin/stuck-payments?adminKey=YOUR_KEY
+router.get('/stuck-payments', requireAdminKey, async (req, res) => {
+  try {
+    const [payouts, withdrawals, refunds] = await Promise.all([
+      Payout.find({ mode: 'live', status: { $in: ['processing', 'ambiguous'] } }).sort({ updatedAt: 1 }),
+      Withdrawal.find({ mode: 'live', status: { $in: ['processing', 'ambiguous'] } }).sort({ updatedAt: 1 }),
+      Refund.find({ mode: 'live', status: { $in: ['pending', 'submitted'] } }).sort({ updatedAt: 1 }),
+    ]);
+
+    res.json({
+      status: true,
+      data: {
+        payouts,
+        withdrawals,
+        refunds,
+        totalStuck: payouts.length + withdrawals.length + refunds.length,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ status: false, message: err.message });
+  }
+});
+
+// Manually decide the outcome of a specific stuck payout/withdrawal/refund,
+// after confirming the real answer with RexxPay Bank outside of the API
+// (support call, dashboard, email). This calls the exact same
+// confirm*Outcome() function the real webhook would call - it is not a
+// separate, less-safe path for moving money, it's the same one with a
+// human supplying the trigger instead of a webhook.
+//
+//   POST /api/admin/payouts/:reference/resolve?adminKey=YOUR_KEY
+//   { "success": true, "providerRef": "rxp_abc123" }
+//   { "success": false, "failureReason": "confirmed_declined_by_bank_support" }
+router.post('/payouts/:reference/resolve', requireAdminKey, async (req, res) => {
+  try {
+    const { success, providerRef, failureReason } = req.body || {};
+    if (typeof success !== 'boolean') return res.status(400).json({ status: false, message: 'success_boolean_required' });
+    const payout = await confirmPayoutOutcome({ reference: req.params.reference, success, providerRef, failureReason });
+    res.json({ status: true, data: payout });
+  } catch (err) {
+    res.status(400).json({ status: false, message: err.message });
+  }
+});
+
+router.post('/withdrawals/:reference/resolve', requireAdminKey, async (req, res) => {
+  try {
+    const { success, providerRef, failureReason } = req.body || {};
+    if (typeof success !== 'boolean') return res.status(400).json({ status: false, message: 'success_boolean_required' });
+    const withdrawal = await confirmWithdrawalOutcome({ reference: req.params.reference, success, providerRef, failureReason });
+    res.json({ status: true, data: withdrawal });
+  } catch (err) {
+    res.status(400).json({ status: false, message: err.message });
+  }
+});
+
+router.post('/refunds/:reference/resolve', requireAdminKey, async (req, res) => {
+  try {
+    const { success, providerRef, failureReason } = req.body || {};
+    if (typeof success !== 'boolean') return res.status(400).json({ status: false, message: 'success_boolean_required' });
+    const refund = await confirmRefundOutcome({ reference: req.params.reference, success, providerRef, failureReason });
+    res.json({ status: true, data: refund });
+  } catch (err) {
+    res.status(400).json({ status: false, message: err.message });
+  }
+});
+
 // GET so it's genuinely "visit a URL" - no curl/Postman needed. A GET that
 // changes state is unconventional REST, but this is an internal operator
 // tool behind a secret key, not a public API - convenience wins here.
