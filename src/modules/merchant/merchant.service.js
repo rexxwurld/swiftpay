@@ -1,6 +1,6 @@
 // src/modules/merchant/merchant.service.js
 const Merchant = require('./merchant.model');
-const { generateKeyPair, hashSecretKey } = require('../../utils/apiKeys');
+const { generateKeyPair, hashSecretKey, generateWebhookSecret } = require('../../utils/apiKeys');
 const auditLog = require('../audit/auditLog.service');
 
 async function getProfile(merchantId) {
@@ -58,4 +58,31 @@ async function updateWebhookUrl(merchantId, webhookUrl) {
   );
 }
 
-module.exports = { getProfile, updateWebhookUrl, regenerateSecretKey };
+// Same rotation pattern as regenerateSecretKey() above: a fresh whsec_
+// value is generated and saved, and returned in plaintext exactly once
+// in this response - never retrievable again afterward (getProfile()
+// and updateWebhookUrl() both explicitly exclude it). Old value stops
+// verifying immediately, so any webhook already in flight when this
+// runs will fail signature checks and get retried by the sender - same
+// tradeoff a live key rotation has.
+async function regenerateWebhookSecret(merchantId) {
+  const merchant = await Merchant.findById(merchantId);
+  if (!merchant) throw new Error('merchant_not_found');
+
+  const webhookSecret = generateWebhookSecret();
+  merchant.webhookSecret = webhookSecret;
+  await merchant.save();
+
+  await auditLog.record({
+    actorType: 'merchant',
+    actorRef: merchantId.toString(),
+    action: 'merchant.webhook_secret_regenerated',
+    entityType: 'Merchant',
+    entityRef: merchantId.toString(),
+    severity: 'warning',
+  });
+
+  return { webhookSecret };
+}
+
+module.exports = { getProfile, updateWebhookUrl, regenerateSecretKey, regenerateWebhookSecret };
