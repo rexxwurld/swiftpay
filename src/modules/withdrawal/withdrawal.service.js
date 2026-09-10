@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const Withdrawal = require('./withdrawal.model');
 const Merchant = require('../merchant/merchant.model');
 const DailyOutboundLimitCounter = require('../payout/dailyOutboundLimitCounter.model');
-const { reserveFunds, finalizeReservedDebit, releaseReservedFunds, getOrCreateWallet } = require('../wallet/wallet.service');
+const { reserveFundsWithLedgerEntry, finalizeReservedDebit, releaseReservedFunds, getOrCreateWallet } = require('../wallet/wallet.service');
 const { postDoubleEntry } = require('../ledger/ledger.service');
 const { sendPayoutInstruction, simulatePayoutInstruction } = require('../bankPartner/rexxPayBankClient');
 const { dispatchMerchantWebhook } = require('../../utils/merchantWebhook');
@@ -57,9 +57,27 @@ async function requestWithdrawal({ merchantId, amount, currency = 'NGN', idempot
       }
     }
 
-    await reserveFunds(merchantId, amount, session, currency, mode);
+    // Same reasoning as payout.service.js: pre-generate the ID so the
+    // wallet reservation and its matching ledger entry happen together,
+    // guaranteed, via reserveFundsWithLedgerEntry - not as two separate
+    // steps that only stayed in sync by convention.
+    const withdrawalId = new mongoose.Types.ObjectId();
+
+    await reserveFundsWithLedgerEntry({
+      merchantId,
+      amountMinorUnits: amount,
+      currency,
+      mode,
+      session,
+      entryGroup: `withdrawal_${withdrawalId}`,
+      sourceType: 'withdrawal',
+      sourceRef: withdrawalId.toString(),
+      debitDescription: 'Withdrawal requested - funds reserved',
+      creditDescription: 'Funds moved to withdrawal clearing pending bank confirmation',
+    });
 
     const [created] = await Withdrawal.create([{
+      _id: withdrawalId,
       merchant: merchantId, reference, idempotencyKey, amount, currency, mode,
       destinationBankCode: account.bankCode,
       destinationAccountNumber: account.accountNumber,
@@ -67,14 +85,6 @@ async function requestWithdrawal({ merchantId, amount, currency = 'NGN', idempot
       status: 'reserved',
     }], { session, ordered: true });
     withdrawal = created;
-
-    await postDoubleEntry({
-      entryGroup: `withdrawal_${withdrawal._id}`,
-      amount, currency, sourceType: 'withdrawal', sourceRef: withdrawal._id.toString(),
-      debit: { accountType: 'merchant_wallet', accountRef: merchantId.toString(), description: 'Withdrawal requested - funds reserved' },
-      credit: { accountType: 'payout_clearing', accountRef: 'platform_clearing', description: 'Funds moved to withdrawal clearing pending bank confirmation' },
-      session,
-    });
 
     await session.commitTransaction();
     session.endSession();
