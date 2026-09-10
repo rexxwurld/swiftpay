@@ -1,6 +1,7 @@
 // src/modules/wallet/wallet.service.js
 const Wallet = require('./wallet.model');
 const { normalizeCurrency } = require('../../config/currencies');
+const { postDoubleEntry } = require('../ledger/ledger.service');
 
 // `mode` defaults to 'test' everywhere in this file, NOT 'live'. If a
 // caller ever forgets to pass mode explicitly, it should fail closed
@@ -71,6 +72,82 @@ async function creditPendingSettlement(merchantId, amountMinorUnits, session, cu
     { $inc: { pendingSettlementBalance: amountMinorUnits } },
     { new: true, session }
   );
+}
+
+// --- Ledgered wrappers ---------------------------------------------------
+//
+// The two wallet-mutating operations below (reserveFunds,
+// creditPendingSettlement) are ALWAYS supposed to be paired with a
+// matching postDoubleEntry() ledger post in the same DB transaction -
+// otherwise the ledger silently stops being a true record of what
+// happened to the wallet. Previously this pairing only existed by
+// convention (every call site happened to remember to do both). These
+// wrappers make it structural instead: call one function, get both the
+// wallet change AND the ledger entry, in the same transaction, guaranteed.
+//
+// Existing call sites don't have to switch to these immediately - nothing
+// breaks if they don't - but any NEW code moving wallet money should
+// prefer these over calling reserveFunds/creditPendingSettlement and
+// postDoubleEntry separately.
+
+async function reserveFundsWithLedgerEntry({
+  merchantId,
+  amountMinorUnits,
+  currency,
+  mode,
+  session,
+  entryGroup,
+  sourceType,
+  sourceRef,
+  debitDescription = 'Funds reserved',
+  creditAccountType = 'payout_clearing',
+  creditAccountRef = 'platform_clearing',
+  creditDescription = 'Funds moved to clearing pending confirmation',
+}) {
+  const wallet = await reserveFunds(merchantId, amountMinorUnits, session, currency, mode);
+
+  await postDoubleEntry({
+    entryGroup,
+    amount: amountMinorUnits,
+    currency,
+    sourceType,
+    sourceRef,
+    debit: { accountType: 'merchant_wallet', accountRef: merchantId.toString(), description: debitDescription },
+    credit: { accountType: creditAccountType, accountRef: creditAccountRef, description: creditDescription },
+    session,
+  });
+
+  return wallet;
+}
+
+async function creditPendingSettlementWithLedgerEntry({
+  merchantId,
+  amountMinorUnits,
+  currency,
+  mode,
+  session,
+  entryGroup,
+  sourceType,
+  sourceRef,
+  creditDescription = 'Wallet credited - pending settlement',
+  debitAccountType = 'payout_clearing',
+  debitAccountRef = 'platform_clearing',
+  debitDescription = 'Inbound payment received',
+}) {
+  const wallet = await creditPendingSettlement(merchantId, amountMinorUnits, session, currency, mode);
+
+  await postDoubleEntry({
+    entryGroup,
+    amount: amountMinorUnits,
+    currency,
+    sourceType,
+    sourceRef,
+    debit: { accountType: debitAccountType, accountRef: debitAccountRef, description: debitDescription },
+    credit: { accountType: 'merchant_wallet', accountRef: merchantId.toString(), description: creditDescription },
+    session,
+  });
+
+  return wallet;
 }
 
 // Unchanged below - these operate on a walletId that's already scoped
@@ -144,4 +221,6 @@ module.exports = {
   reserveFunds,
   finalizeReservedDebit,
   releaseReservedFunds,
+  reserveFundsWithLedgerEntry,
+  creditPendingSettlementWithLedgerEntry,
 };
