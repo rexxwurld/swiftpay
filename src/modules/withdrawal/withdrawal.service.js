@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const crypto = require('crypto');
 const Withdrawal = require('./withdrawal.model');
 const Merchant = require('../merchant/merchant.model');
+const DailyOutboundLimitCounter = require('../payout/dailyOutboundLimitCounter.model');
 const { reserveFunds, finalizeReservedDebit, releaseReservedFunds, getOrCreateWallet } = require('../wallet/wallet.service');
 const { postDoubleEntry } = require('../ledger/ledger.service');
 const { sendPayoutInstruction, simulatePayoutInstruction } = require('../bankPartner/rexxPayBankClient');
@@ -36,6 +37,26 @@ async function requestWithdrawal({ merchantId, amount, currency = 'NGN', idempot
 
   try {
     session.startTransaction();
+
+    // Daily outbound cap (ATOMIC) - shared with payout.service.js via the
+    // same DailyOutboundLimitCounter collection, keyed by merchant +
+    // currency + day. Withdrawals and payouts both draw from the same
+    // wallet and both send money out, so they share one combined cap -
+    // otherwise a merchant could dodge the limit just by splitting
+    // requests between the two endpoints.
+    if (mode === 'live') {
+      const dayKey = new Date().toISOString().slice(0, 10);
+      const outboundCounter = await DailyOutboundLimitCounter.findOneAndUpdate(
+        { merchant: merchantId, currency, dayKey },
+        { $inc: { totalSent: amount } },
+        { new: true, upsert: true, session }
+      );
+
+      if (outboundCounter.totalSent > merchantLimits.MAX_DAILY_OUTBOUND_MINOR) {
+        throw new Error('withdrawal_exceeds_daily_outbound_limit');
+      }
+    }
+
     await reserveFunds(merchantId, amount, session, currency, mode);
 
     const [created] = await Withdrawal.create([{
