@@ -70,11 +70,6 @@ async function requestPayout({
   try {
     session.startTransaction();
 
-    // Daily outbound cap (ATOMIC) - only for real money. Unlike the
-    // inbound daily check (transaction.service.js), which flags AFTER
-    // money has already arrived, this money hasn't left yet - so if the
-    // day's cap is exceeded, we can and should just refuse the request
-    // outright, before anything is reserved.
     if (mode === 'live') {
       const dayKey = new Date().toISOString().slice(0, 10);
       const outboundCounter = await DailyOutboundLimitCounter.findOneAndUpdate(
@@ -88,12 +83,6 @@ async function requestPayout({
       }
     }
 
-    // Pre-generate the ID so the ledger entry below (which needs a
-    // sourceRef) and the Payout document itself can be created in a
-    // single, guaranteed-together step via reserveFundsWithLedgerEntry -
-    // instead of reserving funds, creating the record, THEN posting the
-    // ledger entry as three separate steps that only stayed in sync by
-    // convention.
     const payoutId = new mongoose.Types.ObjectId();
 
     await reserveFundsWithLedgerEntry({
@@ -155,7 +144,6 @@ async function requestPayout({
   await payout.save();
 
   try {
-    // THE gate: live payouts call the real bank, test payouts never do.
     const bankCall = mode === 'live' ? sendPayoutInstruction : simulatePayoutInstruction;
 
     const result = await bankCall({
@@ -191,9 +179,20 @@ async function requestPayout({
       }
     }
   } catch (err) {
-    if (err.ambiguousOutcome) {
+    // Either we genuinely don't know what the bank did (network-level
+    // ambiguity from the bank client), or we DO know for certain the
+    // bank already confirmed success and only our own bookkeeping
+    // hiccuped afterward (localFinalizationFailure). Both cases get
+    // treated the same way: parked as 'ambiguous' for a human (or
+    // scripts/reconcile-outbound.js) to resolve with the real outcome -
+    // NEVER auto-reversed, since in both cases the bank may have already
+    // sent real money and reversing would falsely tell the merchant it
+    // came back.
+    if (err.ambiguousOutcome || err.localFinalizationFailure) {
       payout.status = 'ambiguous';
-      payout.failureReason = `bank_call_ambiguous: ${err.message}`;
+      payout.failureReason = err.localFinalizationFailure
+        ? `local_finalization_failed_after_bank_success: ${err.message}`
+        : `bank_call_ambiguous: ${err.message}`;
       await payout.save();
 
       await auditLog.record({
@@ -203,7 +202,7 @@ async function requestPayout({
         entityType: 'Payout',
         entityRef: payout._id.toString(),
         severity: 'critical',
-        metadata: { error: err.message },
+        metadata: { error: err.message, localFinalizationFailure: !!err.localFinalizationFailure },
       });
 
       const merchant = await Merchant.findById(payout.merchant);
@@ -211,7 +210,10 @@ async function requestPayout({
         dispatchMerchantWebhook(merchant, { type: 'payout.ambiguous', data: payout.toObject() }).catch(() => {});
       }
     } else {
-      await reversePayout(payout, err.message);
+      // Only reached for errors we're confident mean "the bank never
+      // received/queued this" (e.g. bank_rejected_submission,
+      // bank_declined) - genuinely safe to reverse.
+      await reversePayout(payout._id, err.message);
     }
   }
 
@@ -254,6 +256,11 @@ async function finalizePayoutSuccess(payoutId, providerReference = null) {
       { _id: payout._id, status: 'finalizing' },
       { $set: { status: 'processing', failureReason: `finalization_failed: ${err.message}` } }
     );
+    // IMPORTANT: the bank already told us this payout succeeded - a local
+    // DB hiccup while recording that must NEVER be treated the same as
+    // the bank rejecting the payout. Tag this so requestPayout's outer
+    // catch (below) knows not to reverse it.
+    err.localFinalizationFailure = true;
     throw err;
   }
 
