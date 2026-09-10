@@ -53,7 +53,7 @@ app.use(morgan('dev'));
 app.use(cookieParser());
 app.use(express.json({
   verify: (req, res, buf) => {
-    if (req.originalUrl.startsWith('/api/v1/webhooks')) {
+    if (req.originalUrl.includes('/webhooks')) {
       req.rawBody = Buffer.from(buf);
     }
   }
