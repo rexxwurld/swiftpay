@@ -8,6 +8,7 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "worker": "node src/queue/webhookWorker.js",
+    "worker:merchant-webhooks": "node src/queue/merchantWebhookWorker.js",
     "worker:dev": "nodemon src/queue/webhookWorker.js",
     "provision-bank-pool": "node scripts/provision-rexxpay-bank-pool.js",
     "auto-provision-pool": "node scripts/auto-provision-pool.js",
