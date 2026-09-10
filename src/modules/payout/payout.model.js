@@ -39,4 +39,6 @@ payoutSchema.index(
   { unique: true, partialFilterExpression: { idempotencyKey: { $type: 'string' } } }
 );
 
+payoutSchema.index({ providerRef: 1 }, { sparse: true });
+
 module.exports = mongoose.model('Payout', payoutSchema);
