@@ -4,6 +4,8 @@ const mongoose = require('mongoose');
 const Transaction = require('./transaction.model');
 const Customer = require('../customer/customer.model');
 const VirtualAccount = require('../virtualAccount/virtualAccount.model');
+const DailyLimitCounter = require('./dailyLimitCounter.model');
+const VelocityCounter = require('./velocityCounter.model');
 
 const { creditPendingSettlement } = require('../wallet/wallet.service');
 const { postDoubleEntry } = require('../ledger/ledger.service');
@@ -30,19 +32,11 @@ async function recordIncomingPayment({
     return { transaction: existing, duplicate: true };
   }
 
-  // Loaded up front now (previously only fetched later, just for fees) -
-  // limit checks below are plan-aware and need it too.
   const merchant = await Merchant.findById(merchantId);
   const merchantLimits = limits.getLimitsForMerchant(merchant);
 
   let flagReason = null;
 
-  // Belt-and-braces: payment.service.js already rejects amount_below_minimum
-  // at initialize time, but a customer can still manually transfer an
-  // arbitrary amount to an already-assigned virtual account, bypassing
-  // that check entirely. Flag rather than reject outright - the money has
-  // already physically moved, so it needs a human decision (refund vs.
-  // manual credit), not a silent drop.
   if (amountReceived < merchantLimits.MIN_SINGLE_PAYMENT_MINOR) {
     flagReason = 'below_min_single_payment';
   }
@@ -51,48 +45,15 @@ async function recordIncomingPayment({
     flagReason = 'exceeds_max_single_payment';
   }
 
-  if (!flagReason) {
-    const windowStart = new Date(Date.now() - merchantLimits.VELOCITY_WINDOW_MINUTES * 60 * 1000);
-    const recentCount = await Transaction.countDocuments({
-      virtualAccount: virtualAccountId,
-      createdAt: { $gte: windowStart },
-    });
-    if (recentCount >= merchantLimits.VELOCITY_MAX_COUNT) {
-      flagReason = 'velocity_limit_exceeded';
-    }
-  }
-
-  if (!flagReason) {
-    const dayStart = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const [dailyAgg] = await Transaction.aggregate([
-      { $match: { merchant: merchantId, createdAt: { $gte: dayStart }, status: { $in: ['success', 'partial', 'over'] } } },
-      { $group: { _id: null, total: { $sum: '$amountReceived' } } },
-    ]);
-    const dailyTotal = (dailyAgg?.total || 0) + amountReceived;
-    if (dailyTotal > merchantLimits.MAX_DAILY_INBOUND_MINOR) {
-      flagReason = 'exceeds_daily_inbound_limit';
-    }
-  }
-
+  let sanctionsFlagReason = null;
   if (!flagReason) {
     const customer = await Customer.findById(customerId);
     if (customer) {
       const screening = screenName(customer.fullName);
       if (screening.hit) {
-        flagReason = `sanctions_screen:${screening.reason}`;
+        sanctionsFlagReason = `sanctions_screen:${screening.reason}`;
       }
     }
-  }
-
-  let status;
-  if (flagReason) {
-    status = 'flagged';
-  } else if (amountExpected != null && amountReceived < amountExpected) {
-    status = 'partial';
-  } else if (amountExpected != null && amountReceived > amountExpected) {
-    status = 'over';
-  } else {
-    status = 'success';
   }
 
   const virtualAccount = await VirtualAccount.findById(virtualAccountId);
@@ -100,28 +61,69 @@ async function recordIncomingPayment({
     throw new Error('virtual_account_not_found');
   }
 
-  // The transaction's mode comes from the account it landed on, not
-  // from anywhere else - this is the single source of truth for
-  // whether this money is real.
   const mode = virtualAccount.mode || 'live';
 
   const hasSplit = !!(virtualAccount.splitSubaccount && virtualAccount.splitPercentage);
   const splitAmount = hasSplit ? Math.floor((amountReceived * virtualAccount.splitPercentage) / 100) : 0;
   const merchantAmount = amountReceived - splitAmount;
 
-  let platformFee = 0;
-  let netAmount = merchantAmount;
-
-  if (status !== 'flagged' && status !== 'failed' && merchantAmount > 0) {
-    ({ feeAmount: platformFee, netAmount } = computeFee(merchantAmount, merchant));
-  }
-
-  const willCreditMerchant = status !== 'flagged' && status !== 'failed' && netAmount > 0;
-
   const session = await mongoose.startSession();
 
   try {
     session.startTransaction();
+
+    if (!flagReason) {
+      const velocityWindowMs = merchantLimits.VELOCITY_WINDOW_MINUTES * 60 * 1000;
+      const windowKey = String(Math.floor(Date.now() / velocityWindowMs));
+
+      const velocityCounter = await VelocityCounter.findOneAndUpdate(
+        { virtualAccount: virtualAccountId, windowKey },
+        { $inc: { count: 1 } },
+        { new: true, upsert: true, session }
+      );
+
+      if (velocityCounter.count > merchantLimits.VELOCITY_MAX_COUNT) {
+        flagReason = 'velocity_limit_exceeded';
+      }
+    }
+
+    if (!flagReason) {
+      const dayKey = new Date().toISOString().slice(0, 10);
+
+      const dailyCounter = await DailyLimitCounter.findOneAndUpdate(
+        { merchant: merchantId, currency, dayKey },
+        { $inc: { totalReceived: amountReceived } },
+        { new: true, upsert: true, session }
+      );
+
+      if (dailyCounter.totalReceived > merchantLimits.MAX_DAILY_INBOUND_MINOR) {
+        flagReason = 'exceeds_daily_inbound_limit';
+      }
+    }
+
+    if (!flagReason && sanctionsFlagReason) {
+      flagReason = sanctionsFlagReason;
+    }
+
+    let status;
+    if (flagReason) {
+      status = 'flagged';
+    } else if (amountExpected != null && amountReceived < amountExpected) {
+      status = 'partial';
+    } else if (amountExpected != null && amountReceived > amountExpected) {
+      status = 'over';
+    } else {
+      status = 'success';
+    }
+
+    let platformFee = 0;
+    let netAmount = merchantAmount;
+
+    if (status !== 'flagged' && status !== 'failed' && merchantAmount > 0) {
+      ({ feeAmount: platformFee, netAmount } = computeFee(merchantAmount, merchant));
+    }
+
+    const willCreditMerchant = status !== 'flagged' && status !== 'failed' && netAmount > 0;
 
     const [transaction] = await Transaction.create(
       [
