@@ -38,12 +38,6 @@ async function requestWithdrawal({ merchantId, amount, currency = 'NGN', idempot
   try {
     session.startTransaction();
 
-    // Daily outbound cap (ATOMIC) - shared with payout.service.js via the
-    // same DailyOutboundLimitCounter collection, keyed by merchant +
-    // currency + day. Withdrawals and payouts both draw from the same
-    // wallet and both send money out, so they share one combined cap -
-    // otherwise a merchant could dodge the limit just by splitting
-    // requests between the two endpoints.
     if (mode === 'live') {
       const dayKey = new Date().toISOString().slice(0, 10);
       const outboundCounter = await DailyOutboundLimitCounter.findOneAndUpdate(
@@ -57,10 +51,6 @@ async function requestWithdrawal({ merchantId, amount, currency = 'NGN', idempot
       }
     }
 
-    // Same reasoning as payout.service.js: pre-generate the ID so the
-    // wallet reservation and its matching ledger entry happen together,
-    // guaranteed, via reserveFundsWithLedgerEntry - not as two separate
-    // steps that only stayed in sync by convention.
     const withdrawalId = new mongoose.Types.ObjectId();
 
     await reserveFundsWithLedgerEntry({
@@ -127,13 +117,21 @@ async function requestWithdrawal({ merchantId, amount, currency = 'NGN', idempot
       if (freshMerchant) dispatchMerchantWebhook(freshMerchant, { type: 'withdrawal.processing', data: withdrawal.toObject() }).catch(() => {});
     }
   } catch (err) {
-    if (err.ambiguousOutcome) {
+    // Same reasoning as payout.service.js: network-level ambiguity AND
+    // "bank confirmed success but our own finalize step hiccuped" are
+    // both parked as 'ambiguous', never auto-reversed - the bank may
+    // already have sent real money in either case.
+    if (err.ambiguousOutcome || err.localFinalizationFailure) {
       withdrawal.status = 'ambiguous';
-      withdrawal.failureReason = `bank_call_ambiguous: ${err.message}`;
+      withdrawal.failureReason = err.localFinalizationFailure
+        ? `local_finalization_failed_after_bank_success: ${err.message}`
+        : `bank_call_ambiguous: ${err.message}`;
       await withdrawal.save();
       const freshMerchant = await Merchant.findById(withdrawal.merchant);
       if (freshMerchant) dispatchMerchantWebhook(freshMerchant, { type: 'withdrawal.ambiguous', data: withdrawal.toObject() }).catch(() => {});
     } else {
+      // Only reached for errors we're confident mean "the bank never
+      // received/queued this" - genuinely safe to reverse.
       await reverseWithdrawal(withdrawal._id, err.message);
     }
   }
@@ -162,6 +160,11 @@ async function finalizeWithdrawalSuccess(withdrawalId, providerReference = null)
   } catch (err) {
     await session.abortTransaction(); session.endSession();
     await Withdrawal.updateOne({ _id: withdrawal._id, status: 'finalizing' }, { $set: { status: 'processing', failureReason: `finalization_failed: ${err.message}` } });
+    // IMPORTANT: the bank already told us this withdrawal succeeded - a
+    // local DB hiccup while recording that must NEVER be treated the same
+    // as the bank rejecting it. Tag this so requestWithdrawal's outer
+    // catch (above) knows not to reverse it.
+    err.localFinalizationFailure = true;
     throw err;
   }
 
