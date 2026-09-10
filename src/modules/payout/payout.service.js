@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const crypto = require('crypto');
 const Payout = require('./payout.model');
 const DailyOutboundLimitCounter = require('./dailyOutboundLimitCounter.model');
-const { reserveFunds, finalizeReservedDebit, releaseReservedFunds, getOrCreateWallet } = require('../wallet/wallet.service');
+const { reserveFundsWithLedgerEntry, finalizeReservedDebit, releaseReservedFunds, getOrCreateWallet } = require('../wallet/wallet.service');
 const { postDoubleEntry } = require('../ledger/ledger.service');
 const { findActiveByCodeForMerchant } = require('../recipient/recipient.service');
 const { dispatchMerchantWebhook } = require('../../utils/merchantWebhook');
@@ -88,11 +88,31 @@ async function requestPayout({
       }
     }
 
-    const wallet = await reserveFunds(merchantId, amount, session, currency, mode);
+    // Pre-generate the ID so the ledger entry below (which needs a
+    // sourceRef) and the Payout document itself can be created in a
+    // single, guaranteed-together step via reserveFundsWithLedgerEntry -
+    // instead of reserving funds, creating the record, THEN posting the
+    // ledger entry as three separate steps that only stayed in sync by
+    // convention.
+    const payoutId = new mongoose.Types.ObjectId();
+
+    await reserveFundsWithLedgerEntry({
+      merchantId,
+      amountMinorUnits: amount,
+      currency,
+      mode,
+      session,
+      entryGroup: `payout_${payoutId}`,
+      sourceType: 'payout',
+      sourceRef: payoutId.toString(),
+      debitDescription: 'Payout requested - funds reserved',
+      creditDescription: 'Funds moved to payout clearing pending bank confirmation',
+    });
 
     const [created] = await Payout.create(
       [
         {
+          _id: payoutId,
           merchant: merchantId,
           reference,
           idempotencyKey,
@@ -108,17 +128,6 @@ async function requestPayout({
       { session, ordered: true }
     );
     payout = created;
-
-    await postDoubleEntry({
-      entryGroup: `payout_${payout._id}`,
-      amount,
-      currency,
-      sourceType: 'payout',
-      sourceRef: payout._id.toString(),
-      debit: { accountType: 'merchant_wallet', accountRef: merchantId.toString(), description: 'Payout requested - funds reserved' },
-      credit: { accountType: 'payout_clearing', accountRef: 'platform_clearing', description: 'Funds moved to payout clearing pending bank confirmation' },
-      session,
-    });
 
     await session.commitTransaction();
     session.endSession();
@@ -146,6 +155,7 @@ async function requestPayout({
   await payout.save();
 
   try {
+    // THE gate: live payouts call the real bank, test payouts never do.
     const bankCall = mode === 'live' ? sendPayoutInstruction : simulatePayoutInstruction;
 
     const result = await bankCall({
