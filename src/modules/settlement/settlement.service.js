@@ -121,14 +121,29 @@ async function runSettlePhase({
   const failedIds = [];
 
   for (const txn of eligible) {
+    const session = await mongoose.startSession();
+
     try {
+      session.startTransaction();
+
+      // Now wrapped in a single Mongo transaction, same pattern as
+      // runMakeAvailablePhase below - previously this phase did the
+      // claim and the status flip as two separate, un-transacted
+      // operations. The status-based guards made that safe against
+      // double-settlement even so, but leaving it un-transacted meant
+      // a crash between the two steps could leave a transaction
+      // claimed-but-not-settled for longer than necessary, and the
+      // two phases followed different patterns for no real reason.
       const claimed = await claimTransaction({
         transactionId: txn._id,
         batchId: batch._id,
         phase: 'settle',
+        session,
       });
 
       if (!claimed) {
+        await session.abortTransaction();
+        session.endSession();
         continue;
       }
 
@@ -148,25 +163,35 @@ async function runSettlePhase({
             settlementLockAt: null,
           },
         },
-        { new: true }
+        { new: true, session }
       );
 
-      if (updated) {
-        totalAmount += updated.netAmount;
-        successfulCount++;
-      } else {
-        await releaseSettlementLock({
-          transactionId: txn._id,
-          batchId: batch._id,
-        });
+      if (!updated) {
+        throw new Error('settlement_transaction_claim_lost');
       }
+
+      await session.commitTransaction();
+      session.endSession();
+
+      totalAmount += updated.netAmount;
+      successfulCount++;
     } catch (err) {
+      await session.abortTransaction().catch(() => {});
+      session.endSession();
+
       failedIds.push(txn._id);
 
-      await releaseSettlementLock({
-        transactionId: txn._id,
-        batchId: batch._id,
-      }).catch(() => {});
+      // No releaseSettlementLock call needed here - the transaction abort
+      // above already reverted the claim, same as runMakeAvailablePhase.
+      await auditLog.record({
+        actorType: 'system',
+        actorRef: 'settlement_service',
+        action: 'settlement.settle_failed',
+        entityType: 'Transaction',
+        entityRef: txn._id.toString(),
+        severity: 'critical',
+        metadata: { error: err.message },
+      });
     }
   }
 
