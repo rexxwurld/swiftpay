@@ -18,4 +18,5 @@ const withdrawalSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 withdrawalSchema.index({ merchant: 1, idempotencyKey: 1, mode: 1 }, { unique: true, partialFilterExpression: { idempotencyKey: { $type: 'string' } } });
+withdrawalSchema.index({ providerRef: 1 }, { sparse: true });
 module.exports = mongoose.model('Withdrawal', withdrawalSchema);
