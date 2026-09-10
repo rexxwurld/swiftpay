@@ -29,7 +29,14 @@ const GLOBAL_DEFAULTS = {
   VELOCITY_MAX_COUNT: Number(process.env.VELOCITY_MAX_COUNT || 5),
 
   // Payouts
+  // Payouts
   MAX_SINGLE_PAYOUT_MINOR: Number(process.env.MAX_SINGLE_PAYOUT_MINOR || 2_000_000_00), // ₦2,000,000
+
+  // Combined daily payout + withdrawal volume per merchant above this is
+  // rejected outright (unlike the inbound daily cap, which flags for
+  // review - here the money hasn't left yet, so it's safe to just refuse
+  // the request instead of letting it through and sorting it out after).
+  MAX_DAILY_OUTBOUND_MINOR: Number(process.env.MAX_DAILY_OUTBOUND_MINOR || 10_000_000_00), // ₦10,000,000
 };
 
 module.exports = {
