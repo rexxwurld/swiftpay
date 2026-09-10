@@ -2,6 +2,7 @@
 const mongoose = require('mongoose');
 const crypto = require('crypto');
 const Payout = require('./payout.model');
+const DailyOutboundLimitCounter = require('./dailyOutboundLimitCounter.model');
 const { reserveFunds, finalizeReservedDebit, releaseReservedFunds, getOrCreateWallet } = require('../wallet/wallet.service');
 const { postDoubleEntry } = require('../ledger/ledger.service');
 const { findActiveByCodeForMerchant } = require('../recipient/recipient.service');
@@ -28,9 +29,6 @@ async function requestPayout({
   destinationAccountName,
   mode,
 }) {
-  // Deliberately no default. A payout MUST know whether it's real money
-  // or not - this is the exact ambiguity that let a leaked test key
-  // trigger a real bank transfer before this change.
   if (mode !== 'test' && mode !== 'live') {
     throw new Error('payout_mode_required');
   }
@@ -71,6 +69,24 @@ async function requestPayout({
   let payout;
   try {
     session.startTransaction();
+
+    // Daily outbound cap (ATOMIC) - only for real money. Unlike the
+    // inbound daily check (transaction.service.js), which flags AFTER
+    // money has already arrived, this money hasn't left yet - so if the
+    // day's cap is exceeded, we can and should just refuse the request
+    // outright, before anything is reserved.
+    if (mode === 'live') {
+      const dayKey = new Date().toISOString().slice(0, 10);
+      const outboundCounter = await DailyOutboundLimitCounter.findOneAndUpdate(
+        { merchant: merchantId, currency, dayKey },
+        { $inc: { totalSent: amount } },
+        { new: true, upsert: true, session }
+      );
+
+      if (outboundCounter.totalSent > merchantLimits.MAX_DAILY_OUTBOUND_MINOR) {
+        throw new Error('payout_exceeds_daily_outbound_limit');
+      }
+    }
 
     const wallet = await reserveFunds(merchantId, amount, session, currency, mode);
 
@@ -130,7 +146,6 @@ async function requestPayout({
   await payout.save();
 
   try {
-    // THE gate: live payouts call the real bank, test payouts never do.
     const bankCall = mode === 'live' ? sendPayoutInstruction : simulatePayoutInstruction;
 
     const result = await bankCall({
@@ -181,10 +196,6 @@ async function requestPayout({
         metadata: { error: err.message },
       });
 
-      // Generic notification, same shape/mechanism as refund.service.js's
-      // dispatch calls: SwiftPay doesn't know or care who's listening on
-      // the other end; it just reports that a payout it was asked to
-      // process has landed in a state that needs human follow-up.
       const merchant = await Merchant.findById(payout.merchant);
       if (merchant) {
         dispatchMerchantWebhook(merchant, { type: 'payout.ambiguous', data: payout.toObject() }).catch(() => {});
