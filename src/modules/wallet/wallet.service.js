@@ -41,6 +41,7 @@ async function creditWallet(merchantId, amountMinorUnits, session = null, curren
     { merchant: merchantId, currency: cur, mode: m },
     { $inc: { balance: amountMinorUnits } },
     { new: true, session }
+    
   );
 }
 
@@ -58,6 +59,32 @@ async function debitWallet(merchantId, amountMinorUnits, session = null, currenc
   if (!wallet) throw new Error('insufficient_balance');
   return wallet;
 }
+
+// Dispute-only debit. Unlike debitWallet(), this is allowed to push the
+// balance negative - a real chargeback is pulled from the merchant
+// regardless of whether they've already withdrawn the money, same as
+// how Visa/Mastercard/Stripe/Paystack actually handle this: the debt
+// sits on the merchant's balance and is recovered automatically from
+// their next incoming payments (creditPendingSettlement/moveToAvailable
+// already just $inc the balance, so a negative starting balance repays
+// itself as new money comes in - no separate debt-tracking needed).
+// Must NEVER be used for payouts, withdrawals, or refunds - those must
+// keep using debitWallet() and its insufficient_balance guard.
+async function debitWalletForDispute(merchantId, amountMinorUnits, session, currency = 'NGN', mode = 'test') {
+  if (!session) throw new Error('wallet_requires_session');
+  if (!Number.isInteger(amountMinorUnits) || amountMinorUnits <= 0) {
+    throw new Error('invalid_debit_amount');
+  }
+  const cur = normalizeCurrency(currency);
+  const m = normalizeMode(mode);
+  await getOrCreateWallet(merchantId, cur, m, session);
+  return Wallet.findOneAndUpdate(
+    { merchant: merchantId, currency: cur, mode: m },
+    { $inc: { balance: -amountMinorUnits } },
+    { new: true, session }
+  );
+}
+
 
 async function creditPendingSettlement(merchantId, amountMinorUnits, session, currency = 'NGN', mode = 'test') {
   if (!session) throw new Error('wallet_requires_session');
@@ -216,6 +243,7 @@ module.exports = {
   listWallets,
   creditWallet,
   debitWallet,
+  debitWalletForDispute,
   creditPendingSettlement,
   moveToAvailable,
   reserveFunds,
