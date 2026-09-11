@@ -3,25 +3,23 @@
 // Automates what used to be a manual two-step process:
 //   1. Fetch RexxPay Bank's confirmed-deposit export for a date range
 //      (GET /api/v1/admin/settlement-export?from=&to=)
-//   2. Write it to a temp file and run it through the existing
-//      reconcile.js logic unchanged.
+//   2. Reconcile it against our own records (scripts/reconcile.js's logic)
 //
-// This is the missing piece referenced in the README's "Known gaps"
-// section - reconcile.js alone still expects a file on disk; this script
-// is what actually produces that file automatically instead of someone
-// requesting a settlement file from RexxPay Bank by hand.
+// Previously this wrote the export to a temp file and shelled out to
+// `node scripts/reconcile.js <tempfile>` as a child process - which is
+// how admin.routes.js's /cron/fetch-and-reconcile route ended up spawning
+// a `node` process from inside an HTTP handler. Now fetchAndReconcile()
+// below calls the reconciliation logic directly, in-process, so nothing
+// here ever spawns a child process or touches the filesystem.
 //
 // Usage:
 //   node scripts/fetch-and-reconcile.js                # last 24 hours
 //   node scripts/fetch-and-reconcile.js 2026-08-16 2026-08-17
 
 require('dotenv').config();
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
 const axios = require('axios');
-const { execFileSync } = require('child_process');
 const { rexxPayBankBaseUrl, rexxPayBankAdminKey } = require('../src/config/env');
+const { runReconciliation, hasDiscrepancies } = require('./reconcile');
 
 async function fetchSettlementExport(from, to) {
   if (!rexxPayBankBaseUrl || !rexxPayBankAdminKey) {
@@ -43,42 +41,49 @@ async function fetchSettlementExport(from, to) {
   return res.data.data; // array already shaped for reconcile.js
 }
 
-async function main() {
-  const [, , fromArg, toArg] = process.argv;
+// The reusable piece. Assumes an active mongoose connection already
+// exists (same contract as runReconciliation) - the CLI entry point below
+// opens one; admin.routes.js's route reuses the app's own connection.
+async function fetchAndReconcile({ from, to } = {}) {
+  const toDate = to ? new Date(to) : new Date();
+  const fromDate = from ? new Date(from) : new Date(toDate.getTime() - 24 * 60 * 60 * 1000);
 
-  const to = toArg ? new Date(toArg) : new Date();
-  const from = fromArg ? new Date(fromArg) : new Date(to.getTime() - 24 * 60 * 60 * 1000);
+  const rows = await fetchSettlementExport(fromDate.toISOString(), toDate.toISOString());
+  const report = await runReconciliation(rows);
 
-  console.log(`[fetch-and-reconcile] pulling settlement export from ${from.toISOString()} to ${to.toISOString()}...`);
-
-  const rows = await fetchSettlementExport(from.toISOString(), to.toISOString());
-  console.log(`[fetch-and-reconcile] received ${rows.length} settled deposit(s) from RexxPay Bank`);
-
-  const tmpFile = path.join(os.tmpdir(), `rexxpay-settlement-${Date.now()}.json`);
-  fs.writeFileSync(tmpFile, JSON.stringify(rows, null, 2));
-
-  try {
-    // Reuse the existing reconcile.js exactly as-is - no duplicated logic.
-    // Note: reconcile.js exits with code 1 when it FINDS discrepancies -
-    // that's an expected, meaningful result, not a crash. Only treat it
-    // as a genuine failure if the process couldn't run at all.
-    execFileSync('node', [path.join(__dirname, 'reconcile.js'), tmpFile], {
-      stdio: 'inherit',
-    });
-  } catch (err) {
-    if (typeof err.status === 'number') {
-      // reconcile.js ran to completion and reported discrepancies via its
-      // own exit code - just propagate that, don't log it as a crash.
-      process.exitCode = err.status;
-    } else {
-      throw err;
-    }
-  } finally {
-    fs.unlinkSync(tmpFile);
-  }
+  return { from: fromDate.toISOString(), to: toDate.toISOString(), rowsFetched: rows.length, report };
 }
 
-main().catch((err) => {
-  console.error('[fetch-and-reconcile] failed:', err.message);
-  process.exit(1);
-});
+module.exports = { fetchAndReconcile };
+
+// CLI entry point only - runs when this file is executed directly, not
+// when required as a module by admin.routes.js. Behavior for anyone
+// running this by hand is unchanged from before (aside from no longer
+// writing/deleting a temp file, which was never user-visible anyway).
+if (require.main === module) {
+  const mongoose = require('mongoose');
+  const { mongoUri } = require('../src/config/env');
+  const [, , fromArg, toArg] = process.argv;
+
+  (async () => {
+    await mongoose.connect(mongoUri);
+    try {
+      console.log('[fetch-and-reconcile] pulling settlement export...');
+      const { rowsFetched, report } = await fetchAndReconcile({ from: fromArg, to: toArg });
+      console.log(`[fetch-and-reconcile] received ${rowsFetched} settled deposit(s) from RexxPay Bank`);
+      console.log(JSON.stringify(report, null, 2));
+
+      if (hasDiscrepancies(report)) {
+        console.error('\n[fetch-and-reconcile] discrepancy(ies) found - needs manual review.');
+        process.exitCode = 1;
+      } else {
+        console.log('\n[fetch-and-reconcile] clean - no discrepancies.');
+      }
+    } finally {
+      await mongoose.disconnect();
+    }
+  })().catch((err) => {
+    console.error('[fetch-and-reconcile] failed:', err.message);
+    process.exit(1);
+  });
+}
