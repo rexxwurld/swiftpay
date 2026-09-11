@@ -28,6 +28,11 @@ const virtualAccountSchema = new mongoose.Schema(
 
     amountExpected: { type: Number, default: null },
     reference: { type: String, default: null },
+    bankSyncStatus: {
+  type: String,
+  enum: ['synced', 'pending', 'ambiguous', 'failed'],
+  default: 'synced',
+},
 
     splitSubaccount: { type: mongoose.Schema.Types.ObjectId, ref: 'Subaccount', default: null },
     splitPercentage: { type: Number, default: null },
