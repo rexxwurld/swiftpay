@@ -106,7 +106,7 @@ async function settleSubaccount({ merchantId, subaccountId }) {
   reference,
   amount: balance,
   currency: 'NGN',
-  mode: subaccount.mode || 'live',
+  mode: 'live',
   status: 'processing',
         }
         ],
