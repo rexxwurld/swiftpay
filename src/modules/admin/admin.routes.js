@@ -7,6 +7,7 @@
 const express = require('express');
 const router = express.Router();
 const requireAdminKey = require('../../middleware/adminKey.middleware');
+const requireCronKey = require('../../middleware/cronKey.middleware');
 const { ensureDefaultBankPartners, provisionAccountPool, maintainAccountPools } = require('../bankPartner/bankPartner.service');
 const VirtualAccount = require('../virtualAccount/virtualAccount.model');
 const BankPartner = require('../bankPartner/bankPartner.model');
@@ -207,14 +208,17 @@ router.patch('/merchants/:id/fees', requireAdminKey, async (req, res) => {
 // requireAdminKey middleware as every other admin route.
 //
 // Visit (or curl, or point a cron job at):
-//   https://checkout-rexxpay.onrender.com/api/admin/cron/release-stale-accounts?adminKey=YOUR_KEY
-//   https://checkout-rexxpay.onrender.com/api/admin/cron/reactivate-expired-accounts?adminKey=YOUR_KEY
-//   https://checkout-rexxpay.onrender.com/api/admin/cron/auto-provision-pool?adminKey=YOUR_KEY
-//   https://checkout-rexxpay.onrender.com/api/admin/cron/run-settlement?adminKey=YOUR_KEY
-//   https://checkout-rexxpay.onrender.com/api/admin/cron/generate-invoices?adminKey=YOUR_KEY
+//   https://checkout-rexxpay.onrender.com/api/admin/cron/release-stale-accounts?cronKey=YOUR_CRON_KEY
+//   https://checkout-rexxpay.onrender.com/api/admin/cron/reactivate-expired-accounts?cronKey=YOUR_CRON_KEY
+//   https://checkout-rexxpay.onrender.com/api/admin/cron/auto-provision-pool?cronKey=YOUR_CRON_KEY
+//   https://checkout-rexxpay.onrender.com/api/admin/cron/run-settlement?cronKey=YOUR_CRON_KEY
+//   https://checkout-rexxpay.onrender.com/api/admin/cron/generate-invoices?cronKey=YOUR_CRON_KEY
+//
+// CRON_TRIGGER_KEY is a separate secret from INFRA_ADMIN_KEY - set both
+// in .env, rotate them independently.
 
 // Mirrors scripts/release-stale-accounts.js
-router.get('/cron/release-stale-accounts', requireAdminKey, async (req, res) => {
+router.get('/cron/release-stale-accounts', requireCronKey, async (req, res) => {
   try {
     const released = await releaseStaleAssignedAccounts(limits.VIRTUAL_ACCOUNT_EXPIRY_MINUTES);
     res.json({
@@ -228,7 +232,7 @@ router.get('/cron/release-stale-accounts', requireAdminKey, async (req, res) => 
 });
 
 // Mirrors scripts/reactivate-expired-accounts.js
-router.get('/cron/reactivate-expired-accounts', requireAdminKey, async (req, res) => {
+router.get('/cron/reactivate-expired-accounts', requireCronKey, async (req, res) => {
   try {
     const reactivated = await reactivateExpiredAccounts();
     res.json({
@@ -242,7 +246,7 @@ router.get('/cron/reactivate-expired-accounts', requireAdminKey, async (req, res
 });
 
 // Mirrors scripts/auto-provision-pool.js
-router.get('/cron/auto-provision-pool', requireAdminKey, async (req, res) => {
+router.get('/cron/auto-provision-pool', requireCronKey, async (req, res) => {
   try {
     const threshold = req.query.threshold ? parseInt(req.query.threshold, 10) : limits.POOL_MIN_THRESHOLD;
     const topUpCount = req.query.topUpCount ? parseInt(req.query.topUpCount, 10) : limits.POOL_TOPUP_COUNT;
@@ -259,7 +263,7 @@ router.get('/cron/auto-provision-pool', requireAdminKey, async (req, res) => {
 });
 
 // Mirrors scripts/run-settlement.js
-router.get('/cron/run-settlement', requireAdminKey, async (req, res) => {
+router.get('/cron/run-settlement', requireCronKey, async (req, res) => {
   try {
     const requested = req.query.currencies
       ? String(req.query.currencies).split(',').map((c) => c.trim().toUpperCase())
@@ -290,7 +294,7 @@ router.get('/cron/run-settlement', requireAdminKey, async (req, res) => {
 });
 
 // Mirrors scripts/generate-invoices.js
-router.get('/cron/generate-invoices', requireAdminKey, async (req, res) => {
+router.get('/cron/generate-invoices', requireCronKey, async (req, res) => {
   try {
     const invoices = await generateDueInvoices();
     const overdueCount = await markOverdueInvoices();
@@ -311,7 +315,7 @@ router.get('/cron/generate-invoices', requireAdminKey, async (req, res) => {
 // Mirrors scripts/fetch-and-reconcile.js - now called directly, in-process
 // (reusing this app's own already-open database connection), instead of
 // spawning a separate `node` child process from inside this HTTP handler.
-router.get('/cron/fetch-and-reconcile', requireAdminKey, async (req, res) => {
+router.get('/cron/fetch-and-reconcile', requireCronKey, async (req, res) => {
   try {
     const { fetchAndReconcile } = require('../../../scripts/fetch-and-reconcile');
     const { hasDiscrepancies } = require('../../../scripts/reconcile');
