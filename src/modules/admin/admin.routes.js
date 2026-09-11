@@ -8,6 +8,19 @@ const express = require('express');
 const router = express.Router();
 const requireAdminKey = require('../../middleware/adminKey.middleware');
 const requireCronKey = require('../../middleware/cronKey.middleware');
+const { CronHeartbeat, recordHeartbeat } = require('./cronHeartbeat.model');
+
+// How often each cron job is *expected* to run - used only to flag
+// staleness in GET /cron/health, does not affect scheduling itself
+// (the actual schedule lives in your external cron config).
+const EXPECTED_INTERVAL_MINUTES = {
+  'release-stale-accounts': 15,
+  'reactivate-expired-accounts': 15,
+  'auto-provision-pool': 60,
+  'run-settlement': 60 * 24,
+  'generate-invoices': 60 * 24,
+  'fetch-and-reconcile': 60 * 24,
+};
 const { ensureDefaultBankPartners, provisionAccountPool, maintainAccountPools } = require('../bankPartner/bankPartner.service');
 const VirtualAccount = require('../virtualAccount/virtualAccount.model');
 const BankPartner = require('../bankPartner/bankPartner.model');
@@ -221,12 +234,14 @@ router.patch('/merchants/:id/fees', requireAdminKey, async (req, res) => {
 router.get('/cron/release-stale-accounts', requireCronKey, async (req, res) => {
   try {
     const released = await releaseStaleAssignedAccounts(limits.VIRTUAL_ACCOUNT_EXPIRY_MINUTES);
+    await recordHeartbeat('release-stale-accounts', true);
     res.json({
       status: true,
       message: `Released ${released} account(s) assigned longer than ${limits.VIRTUAL_ACCOUNT_EXPIRY_MINUTES} minute(s) with no payment.`,
       released,
     });
   } catch (err) {
+    await recordHeartbeat('release-stale-accounts', false, err.message);
     res.status(500).json({ status: false, message: err.message });
   }
 });
@@ -235,12 +250,14 @@ router.get('/cron/release-stale-accounts', requireCronKey, async (req, res) => {
 router.get('/cron/reactivate-expired-accounts', requireCronKey, async (req, res) => {
   try {
     const reactivated = await reactivateExpiredAccounts();
+    await recordHeartbeat('reactivate-expired-accounts', true);
     res.json({
       status: true,
       message: `Reactivated ${reactivated} account(s) whose cooldown expired.`,
       reactivated,
     });
   } catch (err) {
+    await recordHeartbeat('reactivate-expired-accounts', false, err.message);
     res.status(500).json({ status: false, message: err.message });
   }
 });
@@ -256,12 +273,15 @@ router.get('/cron/auto-provision-pool', requireCronKey, async (req, res) => {
 
     const anyFailed = results.some((r) => r.action === 'failed');
 
+    await recordHeartbeat('auto-provision-pool', !anyFailed, anyFailed ? 'one or more pool top-ups failed' : null);
     res.status(anyFailed ? 207 : 200).json({ status: !anyFailed, results });
   } catch (err) {
+    await recordHeartbeat('auto-provision-pool', false, err.message);
     res.status(500).json({ status: false, message: err.message });
   }
 });
 
+// Mirrors scripts/run-settlement.js
 // Mirrors scripts/run-settlement.js
 router.get('/cron/run-settlement', requireCronKey, async (req, res) => {
   try {
@@ -287,11 +307,15 @@ router.get('/cron/run-settlement', requireCronKey, async (req, res) => {
       (s) => s.error || s.settled?.status === 'failed' || s.madeAvailable?.status === 'failed'
     );
 
+    await recordHeartbeat('run-settlement', !anyFailed, anyFailed ? 'one or more currencies failed to settle' : null);
     res.status(anyFailed ? 207 : 200).json({ status: !anyFailed, summary });
   } catch (err) {
+    await recordHeartbeat('run-settlement', false, err.message);
     res.status(500).json({ status: false, message: err.message });
   }
 });
+
+// Mirrors scripts/generate-invoices.js
 
 // Mirrors scripts/generate-invoices.js
 router.get('/cron/generate-invoices', requireCronKey, async (req, res) => {
@@ -299,6 +323,7 @@ router.get('/cron/generate-invoices', requireCronKey, async (req, res) => {
     const invoices = await generateDueInvoices();
     const overdueCount = await markOverdueInvoices();
 
+    await recordHeartbeat('generate-invoices', true);
     res.json({
       status: true,
       message: `Generated/confirmed ${invoices.length} invoice(s); marked ${overdueCount} as overdue.`,
@@ -306,6 +331,7 @@ router.get('/cron/generate-invoices', requireCronKey, async (req, res) => {
       overdue: overdueCount,
     });
   } catch (err) {
+    await recordHeartbeat('generate-invoices', false, err.message);
     res.status(500).json({ status: false, message: err.message });
   }
 });
@@ -338,5 +364,34 @@ router.get('/cron/fetch-and-reconcile', requireCronKey, async (req, res) => {
     res.status(500).json({ status: false, message: err.message });
   }
 });
+// GET /api/admin/cron/health
+// Answers "has anything that's supposed to run on a schedule stopped
+// firing?" - checks each job's last heartbeat against how often it's
+// expected to run. Admin-key protected (not cron-key) since this is
+// for you to check, not something the scheduler itself calls.
+router.get('/cron/health', requireAdminKey, async (req, res) => {
+  const heartbeats = await CronHeartbeat.find({});
+  const byName = Object.fromEntries(heartbeats.map((h) => [h.jobName, h]));
+
+  const jobs = Object.entries(EXPECTED_INTERVAL_MINUTES).map(([jobName, expectedMinutes]) => {
+    const hb = byName[jobName];
+    const staleAfter = expectedMinutes * 2 * 60 * 1000; // 2x grace window
+    const stale = !hb || (Date.now() - new Date(hb.lastRunAt).getTime()) > staleAfter;
+
+    return {
+      jobName,
+      lastRunAt: hb?.lastRunAt || null,
+      lastStatus: hb?.lastStatus || 'never_run',
+      lastError: hb?.lastError || null,
+      expectedIntervalMinutes: expectedMinutes,
+      stale,
+    };
+  });
+
+  const anyStale = jobs.some((j) => j.stale);
+
+  res.status(anyStale ? 207 : 200).json({ status: !anyStale, jobs });
+});
+
 
 module.exports = router;
