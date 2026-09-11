@@ -14,6 +14,12 @@ const subaccountSettlementSchema = new mongoose.Schema(
 
     amount: { type: Number, required: true }, // minor units
     currency: { type: String, required: true, default: 'NGN' },
+    mode: {
+  type: String,
+  enum: ['test', 'live'],
+  required: true,
+  default: 'live',
+},
 
     status: {
       type: String,
