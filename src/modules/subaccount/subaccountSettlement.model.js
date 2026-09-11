@@ -23,7 +23,7 @@ const subaccountSettlementSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ['pending', 'processing', 'successful', 'failed', 'reversed'],
+      enum: ['pending', 'processing', 'successful', 'failed', 'reversed', 'ambiguous'],
       default: 'pending',
     },
     failureReason: { type: String },
