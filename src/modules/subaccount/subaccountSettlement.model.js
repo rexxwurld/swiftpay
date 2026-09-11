@@ -38,7 +38,9 @@ subaccountSettlementSchema.index(
   { subaccount: 1 },
   {
     unique: true,
-    partialFilterExpression: { status: 'processing' },
+    partialFilterExpression: {
+      status: { $in: ['processing', 'ambiguous'] },
+    },
   }
 );
 module.exports = mongoose.model('SubaccountSettlement', subaccountSettlementSchema);
