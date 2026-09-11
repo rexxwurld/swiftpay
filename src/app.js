@@ -40,6 +40,8 @@ const {
   errorHandler,
 } = require('./middleware/error.middleware');
 
+const requestId = require('./middleware/requestId.middleware');
+
 const swaggerUi = require('swagger-ui-express');
 const YAML = require('yamljs');
 
@@ -49,8 +51,15 @@ const app = express();
 app.set('trust proxy', 1);
 
 app.use(cors());
-app.use(morgan('dev'));
+// Placed before morgan so the access log line below can reference req.id,
+// and before every route so req.id/req.log are available everywhere.
+app.use(requestId);
+morgan.token('id', (req) => req.id);
+app.use(morgan(':id :method :url :status :response-time ms - :res[content-length]'));
 app.use(cookieParser());
+
+
+
 app.use(express.json({
   verify: (req, res, buf) => {
     if (req.originalUrl.includes('/webhooks')) {
