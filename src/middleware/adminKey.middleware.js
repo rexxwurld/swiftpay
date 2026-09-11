@@ -33,7 +33,7 @@ function timingSafeStringEqual(a, b) {
 }
 
 module.exports = function requireAdminKey(req, res, next) {
-  const key = req.headers['x-admin-key'] || req.query.adminKey;
+  const key = req.headers['x-admin-key'];
 
   if (!process.env.INFRA_ADMIN_KEY) {
     // Fail closed: if no admin key is configured, nobody gets in.
