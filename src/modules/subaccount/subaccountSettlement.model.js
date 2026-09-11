@@ -25,5 +25,14 @@ const subaccountSettlementSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-
+// Only one settlement may be actively processing for a subaccount at a time.
+// This is the database-level concurrency guard: two simultaneous settlement
+// requests cannot both reserve the same subaccount balance.
+subaccountSettlementSchema.index(
+  { subaccount: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { status: 'processing' },
+  }
+);
 module.exports = mongoose.model('SubaccountSettlement', subaccountSettlementSchema);
