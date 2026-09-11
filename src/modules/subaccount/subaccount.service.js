@@ -66,16 +66,17 @@ async function sendSettlementToBank(settlement) {
 // never automatic, so the parent controls the settlement cadence.
 async function settleSubaccount({ merchantId, subaccountId }) {
   const subaccount = await getForMerchant(merchantId, subaccountId);
-  const balance = await getBalance(subaccountId);
-
-  if (balance <= 0) throw new Error('no_balance_to_settle');
-
   const reference = `sst_${crypto.randomBytes(12).toString('hex')}`;
 
   const session = await mongoose.startSession();
   let settlement;
   try {
     session.startTransaction();
+    const balance = await getBalance(subaccountId);
+
+if (balance <= 0) {
+  throw new Error('no_balance_to_settle');
+}
 
     const [created] = await SubaccountSettlement.create(
       [
