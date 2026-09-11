@@ -258,30 +258,7 @@ async function maintainAccountPools({
   return results;
 }
 
-
-// =========================================================
-// BANK ACCOUNT STATE SYNC
-// =========================================================
-//
-// IMPORTANT:
-//
-// The BANK is responsible for immediately deactivating a virtual
-// account when money enters it.
-//
-// SwiftPay only calls these endpoints as a fallback.
-//
-// Therefore:
-// - success = bank confirmed the requested action
-// - failure = bank did not confirm it
-//
-// We DO NOT swallow the failure anymore.
-// =========================================================
-
-
-
-
-
-    async function syncBankAccountStatus(accountNumber, action, amount) {
+async function syncBankAccountStatus(accountNumber, action, amount) {
   try {
     const response = await axios.patch(
       `${rexxPayBankBaseUrl}/api/v1/admin/pool-accounts/${accountNumber}/${action}`,
@@ -293,7 +270,6 @@ async function maintainAccountPools({
         timeout: 15000,
       }
     );
-    
 
     return {
       success: true,
@@ -311,11 +287,17 @@ async function maintainAccountPools({
       `[bankPartner] failed to ${action} account ${accountNumber} on RexxPay Bank: ${message}`
     );
 
-    return {
-      success: false,
-      status,
-      error: message,
-    };
+    const syncError = new Error(
+      `Bank account ${action} failed for ${accountNumber}: ${message}`
+    );
+
+    syncError.code = "BANK_ACCOUNT_SYNC_FAILED";
+    syncError.status = status;
+    syncError.accountNumber = accountNumber;
+    syncError.action = action;
+    syncError.cause = err;
+
+    throw syncError;
   }
 }
 
