@@ -101,12 +101,14 @@ async function settleSubaccount({ merchantId, subaccountId }) {
       const [created] = await SubaccountSettlement.create(
         [
           {
-            subaccount: subaccount._id,
-            parentMerchant: merchantId,
-            reference,
-            amount: balance,
-            status: 'processing',
-          },
+  subaccount: subaccount._id,
+  parentMerchant: merchantId,
+  reference,
+  amount: balance,
+  currency: 'NGN',
+  mode: subaccount.mode || 'live',
+  status: 'processing',
+        }
         ],
         { session, ordered: true }
       );
