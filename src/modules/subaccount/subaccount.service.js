@@ -70,44 +70,71 @@ async function settleSubaccount({ merchantId, subaccountId }) {
 
   const session = await mongoose.startSession();
   let settlement;
+  let balance;
+
   try {
-    session.startTransaction();
-    const balance = await getBalance(subaccountId);
-
-if (balance <= 0) {
-  throw new Error('no_balance_to_settle');
-}
-
-    const [created] = await SubaccountSettlement.create(
-      [
+    await session.withTransaction(async () => {
+      // Serialize settlement attempts for this subaccount.
+      // Two simultaneous settlement requests cannot safely modify
+      // the same subaccount at the same time.
+      await Subaccount.findOneAndUpdate(
         {
-          subaccount: subaccount._id,
-          parentMerchant: merchantId,
-          reference,
-          amount: balance,
-          status: 'processing',
+          _id: subaccount._id,
+          merchant: merchantId,
         },
-      ],
-      { session, ordered: true }
-    );
-    settlement = created;
+        {
+          $inc: { settlementVersion: 1 },
+        },
+        {
+          session,
+          new: true,
+        }
+      );
 
-    await postDoubleEntry({
-      entryGroup: `subaccount_settlement_${settlement._id}`,
-      amount: balance,
-      sourceType: 'payout',
-      sourceRef: settlement._id.toString(),
-      debit: { accountType: 'subaccount_settlement', accountRef: subaccount._id.toString(), description: 'Subaccount balance settled out' },
-      credit: { accountType: 'payout_clearing', accountRef: 'platform_clearing', description: 'Funds moved to clearing pending bank confirmation' },
-      session,
+      // Calculate the balance inside the same transaction.
+      balance = await getBalance(subaccountId, session);
+
+      if (balance <= 0) {
+        throw new Error('no_balance_to_settle');
+      }
+
+      const [created] = await SubaccountSettlement.create(
+        [
+          {
+            subaccount: subaccount._id,
+            parentMerchant: merchantId,
+            reference,
+            amount: balance,
+            status: 'processing',
+          },
+        ],
+        { session, ordered: true }
+      );
+
+      settlement = created;
+
+      await postDoubleEntry({
+        entryGroup: `subaccount_settlement_${settlement._id}`,
+        amount: balance,
+        sourceType: 'payout',
+        sourceRef: settlement._id.toString(),
+        debit: {
+          accountType: 'subaccount_settlement',
+          accountRef: subaccount._id.toString(),
+          description: 'Subaccount balance settled out',
+        },
+        credit: {
+          accountType: 'payout_clearing',
+          accountRef: 'platform_clearing',
+          description: 'Funds moved to clearing pending bank confirmation',
+        },
+        session,
+      });
     });
-
-    await session.commitTransaction();
-    session.endSession();
   } catch (err) {
-    await session.abortTransaction();
-    session.endSession();
     throw err;
+  } finally {
+    session.endSession();
   }
 
   await auditLog.record({
@@ -116,14 +143,22 @@ if (balance <= 0) {
     action: 'subaccount.settled',
     entityType: 'SubaccountSettlement',
     entityRef: settlement._id.toString(),
-    metadata: { subaccountId: subaccountId.toString(), amount: balance },
+    metadata: {
+      subaccountId: subaccountId.toString(),
+      amount: balance,
+    },
   });
 
   try {
     const result = await sendSettlementToBank(settlement);
+
     settlement.status = result.success ? 'successful' : 'failed';
     settlement.providerRef = result.providerRef || null;
-    if (!result.success) settlement.failureReason = result.reason || 'provider_declined';
+
+    if (!result.success) {
+      settlement.failureReason = result.reason || 'provider_declined';
+    }
+
     await settlement.save();
 
     if (!result.success) {
@@ -136,7 +171,6 @@ if (balance <= 0) {
 
   return settlement;
 }
-
 async function reverseSettlement(settlement) {
   const session = await mongoose.startSession();
   try {
