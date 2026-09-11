@@ -25,6 +25,20 @@ async function requireApiKey(req, res, next) {
 
   const sessionToken = (bearer && !bearer.startsWith('sk_')) ? bearer : req.cookies?.token;
   if (sessionToken) {
+    // CSRF defense-in-depth for the cookie-session path specifically.
+    // sameSite: 'lax' on the cookie (see auth.controller.js) already
+    // blocks the classic cross-site <form> POST attack on modern
+    // browsers, but a plain HTML form also cannot set a custom header -
+    // so requiring one here means state-changing requests must come
+    // from actual same-origin JS (fetch/XHR), not a forged form,
+    // even if sameSite behavior is ever loosened or a browser doesn't
+        // enforce it.
+    const isStateChanging = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
+    const cameFromCookie = !bearer; // i.e. not an explicit Bearer token
+    if (isStateChanging && cameFromCookie && req.headers['x-requested-with'] !== 'XMLHttpRequest') {
+      return res.status(403).json({ status: false, message: 'csrf_check_failed' });
+    }
+
     try {
       const decoded = jwt.verify(sessionToken, jwtSecret);
       // SECURITY: a 2FA-pending temp token (see auth.service.js loginMerchant)
