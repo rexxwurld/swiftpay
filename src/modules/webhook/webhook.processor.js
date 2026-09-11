@@ -29,6 +29,7 @@ const {
 } = require("../../queue/webhookQueue");
 
 const MAX_ATTEMPTS = 5;
+const STALE_PROCESSING_MS = 10 * 60 * 1000; // 10 minutes
 
 /*
  * Persists the webhook event before processing it.
@@ -91,21 +92,35 @@ async function enqueue({
   return event;
 }
 
+
+
 async function processEvent(eventId) {
   /*
    * Atomically claim the event.
    *
    * This prevents two workers from processing the same webhook
    * simultaneously.
+   *
+   * Also reclaims events stuck at "processing" for too long - e.g. a
+   * worker crashed after claiming but before saving a final status.
+   * Without this, such an event would be re-enqueued by
+   * redriveStuckEvents() forever but never actually match this claim,
+   * staying stuck permanently.
    */
+  const staleBefore = new Date(Date.now() - STALE_PROCESSING_MS);
+
   const event = await WebhookEvent.findOneAndUpdate(
     {
       _id: eventId,
-      status: "queued",
+      $or: [
+        { status: "queued" },
+        { status: "processing", processingStartedAt: { $lt: staleBefore } },
+      ],
     },
     {
       $set: {
         status: "processing",
+        processingStartedAt: new Date(),
       },
       $inc: {
         attempts: 1,
