@@ -5,6 +5,7 @@ const { nanoid } = require('nanoid');
 const Subaccount = require('./subaccount.model');
 const SubaccountSettlement = require('./subaccountSettlement.model');
 const { postDoubleEntry, computeBalance } = require('../ledger/ledger.service');
+const { sendPayoutInstruction, simulatePayoutInstruction } = require('../bankPartner/rexxPayBankClient');
 const auditLog = require('../audit/auditLog.service');
 
 async function createSubaccount({
@@ -56,9 +57,18 @@ async function getBalance(subaccountId) {
   return computeBalance(subaccountId.toString());
 }
 
-// NOTE: same stub-disbursement pattern as payout.service.js / refund.service.js.
-async function sendSettlementToBank(settlement) {
-  return { success: true, providerRef: `sim_${settlement.reference}` };
+async function sendSettlementToBank(settlement, subaccount) {
+  const bankCall = settlement.mode === 'live'
+    ? sendPayoutInstruction
+    : simulatePayoutInstruction;
+
+  return bankCall({
+    idempotencyKey: settlement.reference,
+    amountMajorUnits: settlement.amount / 100,
+    destinationAccountNumber: subaccount.settlementAccountNumber,
+    destinationBank: subaccount.settlementBankCode,
+    destinationAccountName: subaccount.settlementAccountName,
+  });
 }
 
 // Pays out the subaccount's ENTIRE accrued ledger balance to its
@@ -152,20 +162,43 @@ async function settleSubaccount({ merchantId, subaccountId }) {
   });
 
   try {
-    const result = await sendSettlementToBank(settlement);
+    const result = await sendSettlementToBank(settlement, subaccount);
 
-    settlement.status = result.success ? 'successful' : 'failed';
-    settlement.providerRef = result.providerRef || null;
+    if (!result.accepted) {
+  settlement.status = 'failed';
+  settlement.failureReason = result.failureReason || 'bank_rejected_submission';
+  settlement.providerRef = result.providerReference || null;
+  await settlement.save();
 
-    if (!result.success) {
-      settlement.failureReason = result.reason || 'provider_declined';
-    }
+  await reverseSettlement(settlement);
+} else {
+  settlement.providerRef = result.providerReference || settlement.providerRef;
 
-    await settlement.save();
+  if (result.final === true) {
+    if (result.success === true) {
+      settlement.status = 'successful';
+      await settlement.save();
+    } else {
+      settlement.status = 'failed';
+      settlement.failureReason = result.failureReason || 'bank_declined';
+      await settlement.save();
 
-    if (!result.success) {
       await reverseSettlement(settlement);
     }
+  } else {
+    // Bank accepted the instruction but has not given
+    // a final outcome yet. Keep the funds in clearing.
+    settlement.status = 'processing';
+    await settlement.save();
+  }
+    }
+
+
+
+
+
+
+    
   } catch (err) {
     settlement.failureReason = `provider_call_error: ${err.message}`;
     await settlement.save();
