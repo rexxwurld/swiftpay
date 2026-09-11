@@ -306,30 +306,29 @@ router.get('/cron/generate-invoices', requireAdminKey, async (req, res) => {
   }
 });
 
-// Mirrors scripts/fetch-and-reconcile.js
+
+
+// Mirrors scripts/fetch-and-reconcile.js - now called directly, in-process
+// (reusing this app's own already-open database connection), instead of
+// spawning a separate `node` child process from inside this HTTP handler.
 router.get('/cron/fetch-and-reconcile', requireAdminKey, async (req, res) => {
   try {
-    const { execFile } = require('child_process');
-    const path = require('path');
+    const { fetchAndReconcile } = require('../../../scripts/fetch-and-reconcile');
+    const { hasDiscrepancies } = require('../../../scripts/reconcile');
 
-    const from = req.query.from;
-    const to = req.query.to;
-    const args = [path.join(__dirname, '../../../scripts/fetch-and-reconcile.js')];
-    if (from) args.push(from);
-    if (to) args.push(to);
+    const { from, to, rowsFetched, report } = await fetchAndReconcile({
+      from: req.query.from,
+      to: req.query.to,
+    });
 
-    execFile('node', args, { timeout: 60000 }, (err, stdout, stderr) => {
-      // Non-zero exit here can legitimately mean "discrepancies found",
-      // not a crash - see fetch-and-reconcile.js's own comment on this.
-      // Return the output either way and let a human read it, rather than
-      // treating it as a hard failure.
-      const clean = (s) => (s || '').split('\n').filter(Boolean);
-      res.status(err && !err.code ? 500 : 200).json({
-        status: !err || err.code === 1,
-        exitCode: err ? err.code : 0,
-        output: clean(stdout),
-        errorOutput: clean(stderr),
-      });
+    // Same meaning as before: discrepancies found is a meaningful result
+    // to report, not a crash - 207 (multi-status) rather than 500.
+    res.status(hasDiscrepancies(report) ? 207 : 200).json({
+      status: !hasDiscrepancies(report),
+      from,
+      to,
+      rowsFetched,
+      report,
     });
   } catch (err) {
     res.status(500).json({ status: false, message: err.message });
