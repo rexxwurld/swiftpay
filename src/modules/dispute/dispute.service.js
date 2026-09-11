@@ -118,9 +118,15 @@ async function submitEvidence({ merchantId, disputeId, description, url }) {
 async function resolveDispute({ disputeId, outcome, resolution }) {
   if (!['won', 'lost'].includes(outcome)) throw new Error('invalid_outcome');
 
-  const dispute = await Dispute.findById(disputeId);
-  if (!dispute) throw new Error('dispute_not_found');
-  if (!['open', 'under_review'].includes(dispute.status)) {
+  const dispute = await Dispute.findOneAndUpdate(
+    { _id: disputeId, status: { $in: ['open', 'under_review'] } },
+    { $set: { status: 'resolving' } },
+    { new: true }
+  );
+
+  if (!dispute) {
+    const exists = await Dispute.exists({ _id: disputeId });
+    if (!exists) throw new Error('dispute_not_found');
     throw new Error('dispute_already_resolved');
   }
 
