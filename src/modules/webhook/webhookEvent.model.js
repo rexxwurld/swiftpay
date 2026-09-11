@@ -42,6 +42,9 @@ const webhookEventSchema = new mongoose.Schema(
     lastError: {
       type: String,
     },
+    processingStartedAt: {
+      type: Date,
+    },
 
     processedAt: {
       type: Date,
