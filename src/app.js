@@ -49,8 +49,29 @@ const app = express();
 
 
 app.set('trust proxy', 1);
+// Restrict to known dashboard/checkout origins instead of reflecting
+// any origin. The sk_* API-key path isn't cookie-based, so it's
+// unaffected by this - this only matters for the cookie-session path
+// (see auth.middleware.js), which is the one CORS can actually expose.
+const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
 
-app.use(cors());
+app.use(cors({
+  origin(origin, callback) {
+    // No Origin header = same-origin request, curl, server-to-server,
+    // or the sk_* API-key path (merchants integrating from their own
+    // backend) - always allow those.
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error('not_allowed_by_cors'));
+  },
+  credentials: true,
+}));
+
+
 // Placed before morgan so the access log line below can reference req.id,
 // and before every route so req.id/req.log are available everywhere.
 app.use(requestId);
