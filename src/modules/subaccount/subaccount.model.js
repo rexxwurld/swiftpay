@@ -25,6 +25,7 @@ const subaccountSchema = new mongoose.Schema(
     defaultSplitPercentage: { type: Number, min: 1, max: 100, default: null },
 
     active: { type: Boolean, default: true },
+    settlementVersion: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
