@@ -172,6 +172,10 @@ async function resolveDispute({ disputeId, outcome, resolution }) {
     await session.commitTransaction();
     session.endSession();
   } catch (err) {
+    await Dispute.updateOne(
+      { _id: dispute._id, status: 'resolving' },
+      { $set: { status: 'under_review', resolution: `resolution_failed: ${err.message}` } }
+    ).catch(() => {});
     await session.abortTransaction();
     session.endSession();
     throw err;
