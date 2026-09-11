@@ -2,7 +2,7 @@
 const mongoose = require('mongoose');
 const Dispute = require('./dispute.model');
 const Transaction = require('../transaction/transaction.model');
-const { debitWallet, creditWallet } = require('../wallet/wallet.service');
+const { debitWallet, debitWalletForDispute, creditWallet } = require('../wallet/wallet.service');
 const { postDoubleEntry } = require('../ledger/ledger.service');
 const auditLog = require('../audit/auditLog.service');
 const limits = require('../../config/limits');
@@ -29,8 +29,8 @@ async function openDispute({ merchantId, transactionId, amount, reason, reasonDe
   let dispute;
   try {
     session.startTransaction();
+    await debitWalletForDispute(merchantId, disputeAmount, session, transaction.currency, mode);
 
-    await debitWallet(merchantId, disputeAmount, session, transaction.currency, mode);
 
     // openLock defaults to true (see dispute.model.js) - the partial
     // unique index on { transaction, openLock } is what actually
