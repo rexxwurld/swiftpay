@@ -46,8 +46,8 @@ async function postDoubleEntry({
 }
 
 /** Running balance for an account, derived purely from ledger history. */
-async function computeBalance(accountRef) {
-  const [result] = await LedgerEntry.aggregate([
+async function computeBalance(accountRef, session = null) {
+  const pipeline = [
     { $match: { accountRef } },
     {
       $group: {
@@ -56,7 +56,16 @@ async function computeBalance(accountRef) {
         debits: { $sum: { $cond: [{ $eq: ['$direction', 'debit'] }, '$amount', 0] } },
       },
     },
-  ]);
+  ];
+
+  const aggregate = LedgerEntry.aggregate(pipeline);
+
+  if (session) {
+    aggregate.session(session);
+  }
+
+  const [result] = await aggregate;
+
   if (!result) return 0;
   return result.credits - result.debits;
 }
