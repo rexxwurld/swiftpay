@@ -4,7 +4,7 @@
 async function api(path, options = {}) {
   const res = await fetch(path, {
     ...options,
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    headers: { 'Content-Type': 'application/json','X-Requested-With': 'XMLHttpRequest', ...(options.headers || {}) },
     credentials: 'same-origin',
   });
   const body = await res.json().catch(() => ({}));
