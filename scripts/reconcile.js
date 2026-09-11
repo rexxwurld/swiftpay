@@ -25,12 +25,12 @@ const mongoose = require('mongoose');
 const { mongoUri } = require('../src/config/env');
 const Transaction = require('../src/modules/transaction/transaction.model');
 
-async function reconcile(settlementFilePath) {
-  const raw = fs.readFileSync(settlementFilePath, 'utf-8');
-  const settledRecords = JSON.parse(raw);
-
-  await mongoose.connect(mongoUri);
-
+// The actual comparison logic - pure, no file I/O, no DB connect/disconnect
+// of its own. Assumes the caller already has an active mongoose connection
+// (the CLI entry point below connects/disconnects around it; the admin
+// route in admin.routes.js reuses the app's own already-open connection
+// instead of opening a second one).
+async function runReconciliation(settledRecords) {
   const settledRefs = new Set(settledRecords.map((r) => r.bankReference));
   const settledByRef = new Map(settledRecords.map((r) => [r.bankReference, r]));
 
@@ -39,30 +39,21 @@ async function reconcile(settlementFilePath) {
   }).lean();
   const ourRefs = new Set(ourTransactions.map((t) => t.bankReference));
 
-  // In our records but the bank has no matching settlement -> we may have
-  // credited a wallet for money that never actually cleared. Urgent.
   const inOursNotInBank = ourTransactions.filter((t) => !settledRefs.has(t.bankReference));
-
-  // Bank settled it but we have no record -> we may owe a merchant money
-  // we haven't credited them for yet (a missed/failed webhook).
   const inBankNotInOurs = settledRecords.filter((r) => !ourRefs.has(r.bankReference));
 
-  // Both sides have it, but the amount disagrees -> partial/over/under
-  // credit somewhere.
   const amountMismatches = ourTransactions
     .filter((t) => settledByRef.has(t.bankReference))
     .map((t) => ({ ours: t, bank: settledByRef.get(t.bankReference) }))
     .filter(({ ours, bank }) => ours.amountReceived !== bank.amount);
 
-  const report = {
+  return {
     generatedAt: new Date().toISOString(),
     totals: {
       ourTransactions: ourTransactions.length,
       bankSettlements: settledRecords.length,
       matched: ourTransactions.length - inOursNotInBank.length,
     },
-    // These need human eyes, not an automatic fix - see README for the
-    // recommended next step (hold flagged transactions, alert finance/ops).
     inOursNotInBank: inOursNotInBank.map((t) => ({ reference: t.reference, bankReference: t.bankReference, amountReceived: t.amountReceived })),
     inBankNotInOurs,
     amountMismatches: amountMismatches.map(({ ours, bank }) => ({
@@ -71,28 +62,46 @@ async function reconcile(settlementFilePath) {
       bankAmount: bank.amount,
     })),
   };
-
-  console.log(JSON.stringify(report, null, 2));
-
-  if (inOursNotInBank.length || inBankNotInOurs.length || amountMismatches.length) {
-    console.error(
-      `\n[reconcile] ${inOursNotInBank.length + inBankNotInOurs.length + amountMismatches.length} discrepancy(ies) found - needs manual review.`
-    );
-    process.exitCode = 1;
-  } else {
-    console.log('\n[reconcile] clean - no discrepancies.');
-  }
-
-  await mongoose.disconnect();
 }
 
-const filePath = process.argv[2];
-if (!filePath) {
-  console.error('Usage: node scripts/reconcile.js <settlement-file.json>');
-  process.exit(1);
+function hasDiscrepancies(report) {
+  return !!(report.inOursNotInBank.length || report.inBankNotInOurs.length || report.amountMismatches.length);
 }
 
-reconcile(filePath).catch((err) => {
-  console.error('[reconcile] failed:', err);
-  process.exit(1);
-});
+module.exports = { runReconciliation, hasDiscrepancies };
+
+// CLI entry point only - runs when this file is executed directly
+// (`node scripts/reconcile.js ...`), not when required as a module by
+// fetch-and-reconcile.js or admin.routes.js. Behavior for anyone running
+// this by hand is unchanged from before.
+if (require.main === module) {
+  (async () => {
+    const filePath = process.argv[2];
+    if (!filePath) {
+      console.error('Usage: node scripts/reconcile.js <settlement-file.json>');
+      process.exit(1);
+    }
+
+    const raw = fs.readFileSync(filePath, 'utf-8');
+    const settledRecords = JSON.parse(raw);
+
+    await mongoose.connect(mongoUri);
+    try {
+      const report = await runReconciliation(settledRecords);
+      console.log(JSON.stringify(report, null, 2));
+
+      if (hasDiscrepancies(report)) {
+        const total = report.inOursNotInBank.length + report.inBankNotInOurs.length + report.amountMismatches.length;
+        console.error(`\n[reconcile] ${total} discrepancy(ies) found - needs manual review.`);
+        process.exitCode = 1;
+      } else {
+        console.log('\n[reconcile] clean - no discrepancies.');
+      }
+    } finally {
+      await mongoose.disconnect();
+    }
+  })().catch((err) => {
+    console.error('[reconcile] failed:', err);
+    process.exit(1);
+  });
+}
