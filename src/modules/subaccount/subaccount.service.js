@@ -192,16 +192,47 @@ async function settleSubaccount({ merchantId, subaccountId }) {
     await settlement.save();
   }
     }
-
-
-
-
-
-
     
   } catch (err) {
-    settlement.failureReason = `provider_call_error: ${err.message}`;
+  // A network error or provider-side uncertainty does NOT mean
+  // the bank rejected the transfer. The bank may already have
+  // accepted or executed it.
+  //
+  // NEVER reverse an ambiguous bank outcome automatically.
+  settlement.status = 'ambiguous';
+  settlement.failureReason = `bank_call_ambiguous: ${err.message}`;
+
+  try {
     await settlement.save();
+  } catch (saveErr) {
+    // The original bank outcome remains unknown. Do not attempt
+    // a reversal just because local bookkeeping failed.
+    await auditLog.record({
+      actorType: 'system',
+      actorRef: 'subaccount_settlement_service',
+      action: 'subaccount_settlement.local_save_failed_after_bank_call',
+      entityType: 'SubaccountSettlement',
+      entityRef: settlement._id.toString(),
+      severity: 'critical',
+      metadata: {
+        originalError: err.message,
+        saveError: saveErr.message,
+      },
+    }).catch(() => {});
+  }
+
+  await auditLog.record({
+    actorType: 'system',
+    actorRef: 'subaccount_settlement_service',
+    action: 'subaccount_settlement.ambiguous_outcome',
+    entityType: 'SubaccountSettlement',
+    entityRef: settlement._id.toString(),
+    severity: 'critical',
+    metadata: {
+      error: err.message,
+      providerRef: settlement.providerRef,
+    },
+  }).catch(() => {});
   }
 
   return settlement;
