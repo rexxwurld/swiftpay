@@ -288,16 +288,25 @@ async function syncBankAccountStatus(accountNumber, action, amount) {
     );
 
     const syncError = new Error(
-      `Bank account ${action} failed for ${accountNumber}: ${message}`
-    );
+  `Bank account ${action} failed for ${accountNumber}: ${message}`
+);
 
-    syncError.code = "BANK_ACCOUNT_SYNC_FAILED";
-    syncError.status = status;
-    syncError.accountNumber = accountNumber;
-    syncError.action = action;
-    syncError.cause = err;
+syncError.code = "BANK_ACCOUNT_SYNC_FAILED";
+syncError.status = status;
+syncError.accountNumber = accountNumber;
+syncError.action = action;
+syncError.cause = err;
 
-    throw syncError;
+// A timeout/network failure means we cannot know whether RexxPay
+// received or executed the instruction. Never treat that as a
+// definite rejection.
+syncError.ambiguousOutcome =
+  !status ||
+  status === 408 ||
+  status === 429 ||
+  status >= 500;
+
+throw syncError;
   }
 }
 
