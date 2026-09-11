@@ -161,9 +161,47 @@ async function assignVirtualAccount({
   // Only tell the REAL bank about assignment if this is a real account.
 // Test-mode accounts never make a network call to RexxPay Bank at all.
 if (isLive(account)) {
-  await assignBankPoolAccount(account.accountNumber, account.amountExpected);
+  try {
+    await assignBankPoolAccount(
+      account.accountNumber,
+      account.amountExpected
+    );
+
+    account.bankSyncStatus = 'synced';
+    await account.save();
+  } catch (err) {
+    if (err.ambiguousOutcome) {
+      // RexxPay may have received the assignment even though
+      // SwiftPay did not receive a definitive response.
+      //
+      // NEVER return this account to the available pool.
+      // It must remain quarantined until reconciliation resolves
+      // the bank state.
+      account.bankSyncStatus = 'ambiguous';
+      await account.save();
+
+      throw new Error('bank_account_assignment_ambiguous');
+    }
+
+    // Definite bank rejection: the account was never successfully
+    // assigned at the bank, so it is safe to return it to the pool.
+    account.status = 'available';
+    account.bankSyncStatus = 'failed';
+    account.merchant = null;
+    account.customer = null;
+    account.assignedAt = null;
+    account.amountExpected = null;
+    account.reference = null;
+    account.splitSubaccount = null;
+    account.splitPercentage = null;
+
+    await account.save();
+
+    throw new Error('bank_account_assignment_failed');
+  }
 }
-  return { account, checkoutToken };
+
+return { account, checkoutToken };
 }
 
 async function releaseVirtualAccount(accountId) {
