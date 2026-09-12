@@ -209,13 +209,60 @@ async function releaseVirtualAccount(accountId) {
   if (!account) {
     return null;
   }
+
   if (account.status !== 'assigned') {
     return account;
   }
 
   const now = new Date();
-  const cooldownUntil = new Date(now.getTime() + ACCOUNT_COOLDOWN_MINUTES * 60 * 1000);
+  const cooldownUntil = new Date(
+    now.getTime() + ACCOUNT_COOLDOWN_MINUTES * 60 * 1000
+  );
 
+  // Test-mode accounts have no real bank state to synchronize.
+  if (!isLive(account)) {
+    account.status = 'deactivated';
+    account.deactivatedAt = now;
+    account.cooldownUntil = cooldownUntil;
+    account.merchant = null;
+    account.customer = null;
+    account.assignedAt = null;
+    account.amountExpected = null;
+    account.reference = null;
+    account.splitSubaccount = null;
+    account.splitPercentage = null;
+    account.bankSyncStatus = 'synced';
+
+    await account.save();
+
+    await Customer.updateOne(
+      { virtualAccount: account._id },
+      { virtualAccount: null }
+    );
+
+    return account;
+  }
+
+  // Live account: synchronize with RexxPay BEFORE making the
+  // local account available for reuse.
+  try {
+    await deactivateBankPoolAccount(account.accountNumber);
+  } catch (err) {
+    if (err.ambiguousOutcome) {
+      account.bankSyncStatus = 'ambiguous';
+      await account.save();
+
+      throw new Error('bank_account_deactivation_ambiguous');
+    }
+
+    account.bankSyncStatus = 'failed';
+    await account.save();
+
+    throw new Error('bank_account_deactivation_failed');
+  }
+
+  // RexxPay confirmed the deactivation, so it is now safe to
+  // finalize the local state.
   account.status = 'deactivated';
   account.deactivatedAt = now;
   account.cooldownUntil = cooldownUntil;
@@ -226,26 +273,53 @@ async function releaseVirtualAccount(accountId) {
   account.reference = null;
   account.splitSubaccount = null;
   account.splitPercentage = null;
+  account.bankSyncStatus = 'synced';
 
   await account.save();
 
-  await Customer.updateOne({ virtualAccount: account._id }, { virtualAccount: null });
-
-  if (isLive(account)) {
-    await deactivateBankPoolAccount(account.accountNumber);
-  }
+  await Customer.updateOne(
+    { virtualAccount: account._id },
+    { virtualAccount: null }
+  );
 
   return account;
 }
 
 async function releaseStaleAssignedAccounts(maxAgeMinutes) {
-  const cutoff = new Date(Date.now() - maxAgeMinutes * 60 * 1000);
+  const cutoff = new Date(
+    Date.now() - maxAgeMinutes * 60 * 1000
+  );
 
-  const stale = await VirtualAccount.find({ status: 'assigned', assignedAt: { $lte: cutoff } });
+  const stale = await VirtualAccount.find({
+    status: 'assigned',
+    assignedAt: { $lte: cutoff },
+  });
 
   let released = 0;
 
   for (const account of stale) {
+    // Live accounts must be released at RexxPay first.
+    // We do NOT make them available locally until the bank confirms.
+    if (isLive(account)) {
+      try {
+        await releaseBankPoolAccount(account.accountNumber);
+      } catch (err) {
+        if (err.ambiguousOutcome) {
+          // RexxPay may have received the release request.
+          // Keep the account quarantined until reconciliation resolves it.
+          account.bankSyncStatus = 'ambiguous';
+        } else {
+          // Definite failure: the bank still considers the account assigned.
+          account.bankSyncStatus = 'failed';
+        }
+
+        await account.save();
+        continue;
+      }
+    }
+
+    // The bank release succeeded (or this is a test account),
+    // so it is now safe to return the account to the pool.
     account.status = 'available';
     account.merchant = null;
     account.customer = null;
@@ -256,14 +330,14 @@ async function releaseStaleAssignedAccounts(maxAgeMinutes) {
     account.reference = null;
     account.splitSubaccount = null;
     account.splitPercentage = null;
+    account.bankSyncStatus = 'synced';
 
     await account.save();
 
-    await Customer.updateOne({ virtualAccount: account._id }, { virtualAccount: null });
-
-    if (isLive(account)) {
-      await releaseBankPoolAccount(account.accountNumber);
-    }
+    await Customer.updateOne(
+      { virtualAccount: account._id },
+      { virtualAccount: null }
+    );
 
     released += 1;
   }
@@ -282,10 +356,54 @@ async function reactivateExpiredAccounts() {
   let reactivated = 0;
 
   for (const account of accounts) {
-    if (account.status !== 'deactivated' || !account.cooldownUntil || account.cooldownUntil > now) {
+    if (
+      account.status !== 'deactivated' ||
+      !account.cooldownUntil ||
+      account.cooldownUntil > now
+    ) {
       continue;
     }
 
+    // Test-mode accounts have no real bank state to synchronize.
+    if (!isLive(account)) {
+      account.status = 'available';
+      account.deactivatedAt = null;
+      account.cooldownUntil = null;
+      account.merchant = null;
+      account.customer = null;
+      account.assignedAt = null;
+      account.amountExpected = null;
+      account.reference = null;
+      account.splitSubaccount = null;
+      account.splitPercentage = null;
+      account.bankSyncStatus = 'synced';
+
+      await account.save();
+
+      reactivated += 1;
+      continue;
+    }
+
+    // Live account: RexxPay must confirm the account is released
+    // before SwiftPay makes it available for another assignment.
+    try {
+      await releaseBankPoolAccount(account.accountNumber);
+    } catch (err) {
+      if (err.ambiguousOutcome) {
+        // We do not know whether RexxPay processed the release.
+        // Keep the account unavailable until reconciliation resolves it.
+        account.bankSyncStatus = 'ambiguous';
+      } else {
+        // Definite failure: RexxPay still considers the account assigned.
+        account.bankSyncStatus = 'failed';
+      }
+
+      await account.save();
+      continue;
+    }
+
+    // RexxPay confirmed the release, so it is safe to make the
+    // account available in SwiftPay.
     account.status = 'available';
     account.deactivatedAt = null;
     account.cooldownUntil = null;
@@ -296,36 +414,77 @@ async function reactivateExpiredAccounts() {
     account.reference = null;
     account.splitSubaccount = null;
     account.splitPercentage = null;
+    account.bankSyncStatus = 'synced';
 
     await account.save();
-
-    if (isLive(account)) {
-      await releaseBankPoolAccount(account.accountNumber);
-    }
 
     reactivated += 1;
   }
 
   return reactivated;
 }
-
 async function deactivateVirtualAccount({ merchantId, accountNumber }) {
-  const account = await VirtualAccount.findOne({ accountNumber, merchant: merchantId });
+  const account = await VirtualAccount.findOne({
+    accountNumber,
+    merchant: merchantId,
+  });
+
   if (!account) {
     throw new Error('account_not_found');
   }
 
+  // Test-mode accounts have no real bank state to synchronize.
+  if (!isLive(account)) {
+    account.status = 'deactivated';
+    account.deactivatedAt = new Date();
+    account.cooldownUntil = null;
+    account.bankSyncStatus = 'synced';
+
+    await account.save();
+
+    await Customer.updateOne(
+      { virtualAccount: account._id },
+      { virtualAccount: null }
+    );
+
+    return account;
+  }
+
+  // Live account: deactivate it at RexxPay first.
+  try {
+    await deactivateBankPoolAccount(account.accountNumber);
+  } catch (err) {
+    if (err.ambiguousOutcome) {
+      // RexxPay may have received the instruction, but SwiftPay
+      // cannot prove the final state.
+      account.bankSyncStatus = 'ambiguous';
+    } else {
+      // Definite failure: keep the local account assigned because
+      // the bank may still consider it active.
+      account.bankSyncStatus = 'failed';
+    }
+
+    await account.save();
+
+    throw new Error(
+      err.ambiguousOutcome
+        ? 'bank_account_deactivation_ambiguous'
+        : 'bank_account_deactivation_failed'
+    );
+  }
+
+  // RexxPay confirmed the deactivation.
   account.status = 'deactivated';
   account.deactivatedAt = new Date();
   account.cooldownUntil = null;
+  account.bankSyncStatus = 'synced';
 
   await account.save();
 
-  await Customer.updateOne({ virtualAccount: account._id }, { virtualAccount: null });
-  
-  if (isLive(account)) {
-    await deactivateBankPoolAccount(account.accountNumber);
-  }
+  await Customer.updateOne(
+    { virtualAccount: account._id },
+    { virtualAccount: null }
+  );
 
   return account;
 }
