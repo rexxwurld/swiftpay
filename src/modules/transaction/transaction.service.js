@@ -250,6 +250,199 @@ async function recordIncomingPayment({
     throw err;
   }
 }
+async function resolveFlaggedTransaction({
+  reference,
+  action,
+}) {
+  if (!['release', 'reject'].includes(action)) {
+    throw new Error('invalid_flag_resolution_action');
+  }
+
+  const session = await mongoose.startSession();
+
+  try {
+    let transaction;
+
+    await session.withTransaction(async () => {
+      transaction = await Transaction.findOneAndUpdate(
+        {
+          reference,
+          status: 'flagged',
+        },
+        {
+          $set: {
+            status: action === 'reject' ? 'failed' : 'pending',
+          },
+        },
+        {
+          new: true,
+          session,
+        }
+      );
+
+      if (!transaction) {
+        throw new Error('flagged_transaction_not_found_or_already_resolved');
+      }
+
+      if (action === 'reject') {
+        transaction.status = 'failed';
+        transaction.settlementStatus = null;
+        await transaction.save({ session });
+        return;
+      }
+
+      const merchant = await Merchant.findById(transaction.merchant).session(session);
+      if (!merchant) {
+        throw new Error('merchant_not_found');
+      }
+
+      const virtualAccount = await VirtualAccount
+        .findById(transaction.virtualAccount)
+        .session(session);
+
+      if (!virtualAccount) {
+        throw new Error('virtual_account_not_found');
+      }
+
+      const hasSplit = !!(
+        transaction.splitSubaccount &&
+        virtualAccount.splitPercentage
+      );
+
+      const splitAmount = hasSplit
+        ? Math.floor(
+            (transaction.amountReceived * virtualAccount.splitPercentage) / 100
+          )
+        : 0;
+
+      const merchantAmount = transaction.amountReceived - splitAmount;
+
+      let platformFee = 0;
+      let netAmount = merchantAmount;
+
+      if (merchantAmount > 0) {
+        ({ feeAmount: platformFee, netAmount } = computeFee(
+          merchantAmount,
+          merchant
+        ));
+      }
+
+      transaction.status =
+        transaction.amountExpected != null &&
+        transaction.amountReceived < transaction.amountExpected
+          ? 'partial'
+          : transaction.amountExpected != null &&
+              transaction.amountReceived > transaction.amountExpected
+            ? 'over'
+            : 'success';
+
+      transaction.flagReason = transaction.flagReason;
+      transaction.splitAmount = splitAmount;
+      transaction.platformFee = platformFee;
+      transaction.netAmount = netAmount;
+      transaction.settlementStatus =
+        netAmount > 0 ? 'pending_settlement' : null;
+
+      await transaction.save({ session });
+
+      if (netAmount > 0) {
+        await creditPendingSettlement(
+          transaction.merchant,
+          netAmount,
+          session,
+          transaction.currency,
+          transaction.mode
+        );
+
+        await postDoubleEntry({
+          entryGroup: `txn_${transaction._id}:manual_release:merchant`,
+          amount: netAmount,
+          currency: transaction.currency,
+          sourceType: 'flagged_transaction_release',
+          sourceRef: transaction._id.toString(),
+          debit: {
+            accountType: 'payout_clearing',
+            accountRef: 'platform_clearing',
+            description: 'Flagged inbound payment released to merchant - pending settlement',
+          },
+          credit: {
+            accountType: 'merchant_wallet',
+            accountRef: transaction.merchant.toString(),
+            description: 'Flagged inbound payment released to merchant',
+          },
+          session,
+        });
+      }
+
+      if (platformFee > 0) {
+        await postDoubleEntry({
+          entryGroup: `txn_${transaction._id}:manual_release:fee`,
+          amount: platformFee,
+          currency: transaction.currency,
+          sourceType: 'flagged_transaction_release',
+          sourceRef: transaction._id.toString(),
+          debit: {
+            accountType: 'payout_clearing',
+            accountRef: 'platform_clearing',
+            description: 'Platform fee taken from released flagged payment',
+          },
+          credit: {
+            accountType: 'platform_revenue',
+            accountRef: 'platform_revenue',
+            description: 'Platform fee revenue from released flagged payment',
+          },
+          session,
+        });
+      }
+
+      if (splitAmount > 0) {
+        await postDoubleEntry({
+          entryGroup: `txn_${transaction._id}:manual_release:split`,
+          amount: splitAmount,
+          currency: transaction.currency,
+          sourceType: 'flagged_transaction_release',
+          sourceRef: transaction._id.toString(),
+          debit: {
+            accountType: 'payout_clearing',
+            accountRef: 'platform_clearing',
+            description: 'Split portion of released flagged payment',
+          },
+          credit: {
+            accountType: 'subaccount_settlement',
+            accountRef: transaction.splitSubaccount.toString(),
+            description: 'Subaccount split from released flagged payment',
+          },
+          session,
+        });
+      }
+    });
+
+    await auditLog.record({
+      actorType: 'admin',
+      actorRef: 'manual_flag_resolution',
+      action:
+        action === 'release'
+          ? 'transaction.flagged_released'
+          : 'transaction.flagged_rejected',
+      entityType: 'Transaction',
+      entityRef: transaction._id.toString(),
+      severity: 'critical',
+      metadata: {
+        reference: transaction.reference,
+        action,
+        amountReceived: transaction.amountReceived,
+        currency: transaction.currency,
+        mode: transaction.mode,
+        merchantId: transaction.merchant.toString(),
+        flagReason: transaction.flagReason,
+      },
+    });
+
+    return transaction;
+  } finally {
+    await session.endSession();
+  }
+}
 
 async function listForMerchant(merchantId, mode = null) {
   const query = { merchant: merchantId };
@@ -257,4 +450,8 @@ async function listForMerchant(merchantId, mode = null) {
   return Transaction.find(query).sort({ createdAt: -1 });
 }
 
-module.exports = { recordIncomingPayment, listForMerchant };
+module.exports = {
+  recordIncomingPayment,
+  resolveFlaggedTransaction,
+  listForMerchant,
+};
