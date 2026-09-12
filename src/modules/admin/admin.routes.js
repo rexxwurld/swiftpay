@@ -9,6 +9,7 @@ const router = express.Router();
 const requireAdminKey = require('../../middleware/adminKey.middleware');
 const requireCronKey = require('../../middleware/cronKey.middleware');
 const { CronHeartbeat, recordHeartbeat } = require('./cronHeartbeat.model');
+const { resolveFlaggedTransaction } = require('../transaction/transaction.service');
 
 // How often each cron job is *expected* to run - used only to flag
 // staleness in GET /cron/health, does not affect scheduling itself
@@ -109,6 +110,49 @@ router.post('/refunds/:reference/resolve', requireAdminKey, async (req, res) => 
     res.json({ status: true, data: refund });
   } catch (err) {
     res.status(400).json({ status: false, message: err.message });
+  }
+});
+
+
+// Manually resolve an inbound transaction that was flagged by
+// amount limits, velocity limits, or sanctions screening.
+//
+// RELEASE:
+//   POST /api/admin/transactions/:reference/resolve?adminKey=YOUR_KEY
+//   { "action": "release" }
+//
+// REJECT:
+//   POST /api/admin/transactions/:reference/resolve?adminKey=YOUR_KEY
+//   { "action": "reject" }
+//
+// Release performs the same wallet + ledger accounting required for
+// a legitimate inbound payment. Reject changes the transaction to
+// failed without crediting the merchant.
+router.post('/transactions/:reference/resolve', requireAdminKey, async (req, res) => {
+  try {
+    const { action } = req.body || {};
+
+    if (!['release', 'reject'].includes(action)) {
+      return res.status(400).json({
+        status: false,
+        message: 'action_must_be_release_or_reject',
+      });
+    }
+
+    const transaction = await resolveFlaggedTransaction({
+      reference: req.params.reference,
+      action,
+    });
+
+    res.json({
+      status: true,
+      data: transaction,
+    });
+  } catch (err) {
+    res.status(400).json({
+      status: false,
+      message: err.message,
+    });
   }
 });
 
