@@ -175,7 +175,7 @@ async function finalizeWithdrawalSuccess(withdrawalId, providerReference = null)
 
 async function reverseWithdrawal(withdrawalId, reason) {
   const withdrawal = await Withdrawal.findOneAndUpdate(
-    { _id: withdrawalId, status: { $in: ['processing', 'ambiguous'] } },
+    { _id: withdrawalId, status: { $in: ['reserved', 'processing', 'ambiguous'] } },
     { $set: { status: 'reversing', failureReason: reason } },
     { new: true }
   );
