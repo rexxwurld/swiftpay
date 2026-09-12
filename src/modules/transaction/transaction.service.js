@@ -240,11 +240,14 @@ async function recordIncomingPayment({
     await session.abortTransaction();
     session.endSession();
 
-    if (err.code === 11000) {
-      const existingRace = await Transaction.findOne({ bankReference });
-      if (existingRace) {
-        return { transaction: existingRace, duplicate: true };
-      }
+    if (err.code === 11000 && bankReference) {
+  const existingRace = await Transaction.findOne({
+    bankReference,
+  });
+
+  if (existingRace) {
+    return { transaction: existingRace, duplicate: true };
+  }
     }
 
     throw err;
