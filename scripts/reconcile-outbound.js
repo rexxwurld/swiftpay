@@ -27,9 +27,15 @@ const { mongoUri } = require('../src/config/env');
 const Payout = require('../src/modules/payout/payout.model');
 const Withdrawal = require('../src/modules/withdrawal/withdrawal.model');
 const Refund = require('../src/modules/refund/refund.model');
+const {
+  confirmPayoutOutcome,
+  reversePayout,
+} = require('../src/modules/payout/payout.service');
+const {
+  confirmWithdrawalOutcome,
+  reverseWithdrawal,
+} = require('../src/modules/withdrawal/withdrawal.service');
 
-const { confirmPayoutOutcome } = require('../src/modules/payout/payout.service');
-const { confirmWithdrawalOutcome } = require('../src/modules/withdrawal/withdrawal.service');
 const { confirmRefundOutcome } = require('../src/modules/refund/refund.service');
 
 const { checkPayoutStatus, checkRefundStatus } = require('../src/modules/bankPartner/rexxPayBankClient');
@@ -40,6 +46,37 @@ const STUCK_AFTER_MINUTES = Number(
 
 const STUCK_STATUSES = ['processing', 'ambiguous'];
 const STALE_RESERVED_STATUS = 'reserved';
+async function recoverReservedPayouts(cutoff) {
+  const stuck = await Payout.find({
+    mode: 'live',
+    status: STALE_RESERVED_STATUS,
+    updatedAt: { $lte: cutoff },
+  });
+
+  const results = [];
+
+  for (const payout of stuck) {
+    try {
+      const recovered = await reversePayout(
+        payout._id,
+        'stale_reserved_recovery'
+      );
+
+      results.push({
+        reference: payout.reference,
+        action: recovered ? 'reserved_released' : 'already_resolved',
+      });
+    } catch (err) {
+      results.push({
+        reference: payout.reference,
+        action: 'error',
+        error: err.message,
+      });
+    }
+  }
+
+  return results;
+}
 
 async function reconcilePayouts(cutoff) {
   const stuck = await Payout.find({
@@ -67,6 +104,37 @@ async function reconcilePayouts(cutoff) {
       results.push({ reference: payout.reference, action: 'error', error: err.message });
     }
   }
+  return results;
+}
+async function recoverReservedWithdrawals(cutoff) {
+  const stuck = await Withdrawal.find({
+    mode: 'live',
+    status: STALE_RESERVED_STATUS,
+    updatedAt: { $lte: cutoff },
+  });
+
+  const results = [];
+
+  for (const withdrawal of stuck) {
+    try {
+      const recovered = await reverseWithdrawal(
+        withdrawal._id,
+        'stale_reserved_recovery'
+      );
+
+      results.push({
+        reference: withdrawal.reference,
+        action: recovered ? 'reserved_released' : 'already_resolved',
+      });
+    } catch (err) {
+      results.push({
+        reference: withdrawal.reference,
+        action: 'error',
+        error: err.message,
+      });
+    }
+  }
+
   return results;
 }
 
@@ -136,16 +204,35 @@ async function main() {
 
   const cutoff = new Date(Date.now() - STUCK_AFTER_MINUTES * 60 * 1000);
 
-  const [payouts, withdrawals, refunds] = await Promise.all([
+  const [reservedPayouts, reservedWithdrawals, payouts, withdrawals, refunds] =
+  await Promise.all([
+    recoverReservedPayouts(cutoff),
+    recoverReservedWithdrawals(cutoff),
     reconcilePayouts(cutoff),
     reconcileWithdrawals(cutoff),
     reconcileRefunds(cutoff),
   ]);
 
-  const report = { generatedAt: new Date().toISOString(), stuckAfterMinutes: STUCK_AFTER_MINUTES, payouts, withdrawals, refunds };
+  const report = {
+  generatedAt: new Date().toISOString(),
+  stuckAfterMinutes: STUCK_AFTER_MINUTES,
+  reservedPayouts,
+  reservedWithdrawals,
+  payouts,
+  withdrawals,
+  refunds,
+};
   console.log(JSON.stringify(report, null, 2));
 
-  const stillUnresolved = [...payouts, ...withdrawals, ...refunds].filter((r) => r.action === 'still_unresolved' || r.action === 'error').length;
+   const stillUnresolved = [
+  ...reservedPayouts,
+  ...reservedWithdrawals,
+  ...payouts,
+  ...withdrawals,
+  ...refunds,
+].filter(
+  (r) => r.action === 'still_unresolved' || r.action === 'error'
+).length;
   if (stillUnresolved > 0) {
     console.error(`\n[reconcile-outbound] ${stillUnresolved} record(s) still need attention - see the report above.`);
     process.exitCode = 1;
