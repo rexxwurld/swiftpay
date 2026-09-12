@@ -39,6 +39,7 @@ const STUCK_AFTER_MINUTES = Number(
 ) || 30;
 
 const STUCK_STATUSES = ['processing', 'ambiguous'];
+const STALE_RESERVED_STATUS = 'reserved';
 
 async function reconcilePayouts(cutoff) {
   const stuck = await Payout.find({
