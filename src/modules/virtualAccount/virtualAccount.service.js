@@ -154,8 +154,7 @@ async function assignVirtualAccount({
     }
   }
 
-  customer.virtualAccount = account._id;
-  await customer.save();
+  
 
   
   // Only tell the REAL bank about assignment if this is a real account.
@@ -200,7 +199,8 @@ if (isLive(account)) {
     throw new Error('bank_account_assignment_failed');
   }
 }
-
+customer.virtualAccount = account._id;
+  await customer.save();
 return { account, checkoutToken };
 }
 
