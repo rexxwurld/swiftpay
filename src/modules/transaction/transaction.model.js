@@ -74,4 +74,14 @@ settlementLockAt: {
 
 transactionSchema.index({ settlementStatus: 1, createdAt: 1 });
 
+transactionSchema.index(
+  { bankReference: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      bankReference: { $type: 'string' },
+    },
+  }
+);
+
 module.exports = mongoose.model('Transaction', transactionSchema);
