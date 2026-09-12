@@ -35,8 +35,7 @@ async function receiveBankWebhook(req, res) {
   providerEventId:
     req.body.eventId ||
     req.body.providerEventId ||
-    req.body.id ||
-    req.body.reference
+    req.body.id 
 });
   // 202: accepted for processing, not yet confirmed applied. The merchant
   // finds out the real outcome via their own webhook/polling of /transactions.
