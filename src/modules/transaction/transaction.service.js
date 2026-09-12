@@ -27,7 +27,7 @@ async function recordIncomingPayment({
   currency,
   bankReference,
 }) {
-  const existing = await Transaction.findOne({ reference });
+  const existing = await Transaction.findOne({ bankReference });
   if (existing) {
     return { transaction: existing, duplicate: true };
   }
@@ -241,7 +241,7 @@ async function recordIncomingPayment({
     session.endSession();
 
     if (err.code === 11000) {
-      const existingRace = await Transaction.findOne({ reference });
+      const existingRace = await Transaction.findOne({ bankReference });
       if (existingRace) {
         return { transaction: existingRace, duplicate: true };
       }
