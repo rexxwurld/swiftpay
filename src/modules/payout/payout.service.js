@@ -283,7 +283,7 @@ async function finalizePayoutSuccess(payoutId, providerReference = null) {
 
 async function reversePayout(payoutId, reason) {
   const payout = await Payout.findOneAndUpdate(
-    { _id: payoutId, status: { $in: ['processing', 'ambiguous'] } },
+    { _id: payoutId, status: { $in: ['reserved', 'processing', 'ambiguous'] } },
     { $set: { status: 'reversing', failureReason: reason } },
     { new: true }
   );
