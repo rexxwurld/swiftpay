@@ -27,6 +27,12 @@ async function recordIncomingPayment({
   currency,
   bankReference,
 }) {
+    if (!bankReference || typeof bankReference !== 'string' || !bankReference.trim()) {
+    throw new Error('missing_bank_reference');
+  }
+
+  bankReference = bankReference.trim();
+  
   const existing = await Transaction.findOne({ bankReference });
   if (existing) {
     return { transaction: existing, duplicate: true };
