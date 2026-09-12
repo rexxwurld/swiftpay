@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 
 const transactionSchema = new mongoose.Schema(
   {
-    reference: { type: String, required: true, unique: true },
+    reference: { type: String, required: true, index: true },
     merchant: { type: mongoose.Schema.Types.ObjectId, ref: 'Merchant', required: true },
     customer: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', required: true },
     virtualAccount: { type: mongoose.Schema.Types.ObjectId, ref: 'VirtualAccount', required: true },
