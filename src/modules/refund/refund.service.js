@@ -173,8 +173,13 @@ async function requestRefund({
   // rejected the submission outright (e.g. malformed destination
   // account) - but this is just an acknowledgement round trip, not a
   // wait for settlement, so it stays fast.
+    let bankAccepted = false;
+
   try {
-    const submitCall = mode === 'live' ? sendRefundInstruction : simulateRefundInstruction;
+    const submitCall =
+      mode === 'live'
+        ? sendRefundInstruction
+        : simulateRefundInstruction;
 
     const result = await submitCall({
       idempotencyKey: refund.reference,
@@ -186,9 +191,15 @@ async function requestRefund({
     });
 
     if (result.accepted) {
+      // From this point onward, the bank may already have the refund
+      // queued. Any local failure must therefore NEVER trigger an
+      // automatic reversal.
+      bankAccepted = true;
+
       refund.status = 'submitted';
       refund.submissionRef = result.submissionRef || null;
       refund.submittedAt = new Date();
+
       await refund.save();
 
       await auditLog.record({
@@ -197,37 +208,75 @@ async function requestRefund({
         action: 'refund.submitted',
         entityType: 'Refund',
         entityRef: refund._id.toString(),
-        metadata: { submissionRef: refund.submissionRef, mode },
+        metadata: {
+          submissionRef: refund.submissionRef,
+          mode,
+        },
       });
     } else {
-      // Bank rejected the submission itself (not a later decline) - safe
-      // to reverse right away, since we know for certain nothing was
-      // queued on their side.
-      refund = (await reverseRefund(refund._id, result.rejectionReason || 'bank_rejected_submission')) || refund;
+      // The bank explicitly rejected the submission itself.
+      // Nothing was queued, so reversing our local reservation is safe.
+      refund =
+        (await reverseRefund(
+          refund._id,
+          result.rejectionReason || 'bank_rejected_submission'
+        )) || refund;
     }
   } catch (err) {
-    if (err.ambiguousOutcome) {
-      // We don't know if the bank received the instruction or not (the
-      // network call itself failed/timed out). Do NOT reverse - that
-      // could double-refund if the bank actually did receive it. Leave
-      // it in 'pending' with the ambiguity recorded, for manual
-      // reconciliation - same pattern as payout.service.js.
-      refund.failureReason = `submission_ambiguous: ${err.message}`;
-      await refund.save();
+    if (bankAccepted || err.ambiguousOutcome) {
+      // Either the bank definitely accepted the refund and our local
+      // bookkeeping failed, or we cannot determine whether the bank
+      // received the instruction.
+      //
+      // NEVER reverse automatically in either case.
+      refund.failureReason = bankAccepted
+        ? `local_finalization_failed_after_bank_acceptance: ${err.message}`
+        : `submission_ambiguous: ${err.message}`;
+
+      // Keep it in a state that requires reconciliation.
+      // If the save itself is what failed, this save may fail too;
+      // the important rule is that we NEVER call reverseRefund here.
+      refund.status = 'ambiguous';
+
+      try {
+        await refund.save();
+      } catch (saveErr) {
+        await auditLog.record({
+          actorType: 'system',
+          actorRef: 'refund_service',
+          action: 'refund.local_save_failed_after_bank_acceptance',
+          entityType: 'Refund',
+          entityRef: refund._id.toString(),
+          severity: 'critical',
+          metadata: {
+            originalError: err.message,
+            saveError: saveErr.message,
+          },
+        }).catch(() => {});
+      }
 
       await auditLog.record({
         actorType: 'system',
         actorRef: 'refund_service',
-        action: 'refund.submission_ambiguous',
+        action: 'refund.ambiguous_outcome',
         entityType: 'Refund',
         entityRef: refund._id.toString(),
         severity: 'critical',
-        metadata: { error: err.message },
-      });
+        metadata: {
+          error: err.message,
+          bankAccepted,
+        },
+      }).catch(() => {});
     } else {
-      refund = (await reverseRefund(refund._id, err.message)) || refund;
+      // Only a definite submission rejection reaches this path.
+      // The bank did not queue the refund, so returning the reserved
+      // money to the merchant is safe.
+      refund =
+        (await reverseRefund(refund._id, err.message)) || refund;
     }
   }
+
+
 
   return refund;
 }
