@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SwiftPay</title>
+  <link rel="icon" type="image/png" href="folder/file_0000000085e0720a9dd1cf99bf9264cc.png">
+  <!-- Favicons -->
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/icons/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="assets/icons/favicon-16x16.png">
+  <!-- Apple devices -->
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/apple-touch-icon.png">
+  <!-- PWA / Android -->
+  <link rel="manifest" href="assets/icons/manifest.json">
+  <meta name="theme-color" content="#3b82f6">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <!-- Fonts / CSS -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<style>
+  /* ===================== RESET ===================== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Inter', sans-serif; line-height: 1.6; color: #2f3847; max-width: 100%; overflow-x: hidden; background: #fff; }
+html { max-width: 100%; overflow-x: hidden; }
+a { text-decoration: none; color: inherit; }
+img { max-width: 100%; display: block; }
+ul { list-style: none; }
+
+/* ===================== NAVBAR ===================== */
+.navbar {display: flex; justify-content: space-between; align-items: center;position: fixed; width: 100%; top: 0; left: 0; padding: 0 4%; height: 64px;background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(6px);box-shadow: 0 2px 10px rgba(0,0,0,0.1); z-index: 100;}
+.logo {
+  font-weight: bold;
+  font-size: clamp(20px, 2vw, 28px);
+  background: linear-gradient(90deg, #3b82f6, #60a5fa); /* blue to lighter blue */
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  color: transparent;
+}
+.nav-links a {font-weight: 500; padding: 8px 12px; border-radius: 5px; transition: all 0.3s;}
+.nav-links a:hover { background: rgba(0,0,0,0.05); }
+.headerlogin { border: 1px solid #3b82f6; }
+.headersignup { background: #3b82f6; color: #fff; }
+.headerlogin:hover, .headersignup:hover { opacity: 0.9; }
+
+ /* Hamburger */
+  .menu-icon { display: none; cursor:pointer; flex-direction: column; gap:5px; }
+  .menu-icon span { height:3px; width:30px; background:#333; border-radius:2px; transition:0.3s;}
+  .menu-icon.active span:nth-child(1) { transform: rotate(45deg) translate(5px,6px);}
+  .menu-icon.active span:nth-child(2) {opacity:0;}
+  .menu-icon.active span:nth-child(3) {transform: rotate(-45deg) translate(5px,-6px);}
+
+/* ===================== HERO ===================== */
+.div100 { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; padding: 100px 4% 50px; gap: 20px; }
+#div100child1 { flex: 1 1 450px; }
+#div100child2 { flex: 1 1 400px; display: flex; justify-content: center; }
+#div100child2 img { width: 100%; height: auto; border-radius: 8px; object-fit: cover; }
+
+#logo1 { font-weight: 600; font-size: clamp(28px, 5vw, 52px); }
+.minutes {background: linear-gradient(90deg, #3b82f6, #60a5fa); /* blue to lighter blue */  -webkit-background-clip: text; -webkit-text-fill-color: transparent;background-clip: text; color: transparent;}
+.font1 { font-size: clamp(16px, 2vw, 20px); margin-top: 15px; display: block; }
+
+.gerrr { display: flex; gap: 15px; margin-top: 20px; flex-wrap: wrap; }
+.gerrr a { padding: 10px 20px; border-radius: 5px; font-weight: 500; }
+#a11 { background: #3b82f6; color: #fff; }
+#a11:hover { background: rgba(0,0,0,0.05); }
+#a12 { background: #fff; color: #333; border: 1px solid #ccc; }
+#a12:hover { background: rgba(0,0,0,0.05); }
+
+/* ===================== STATS ===================== */
+.div3 { display: flex; gap: 40px; margin-top: 40px; flex-wrap: wrap; }
+.div3 div { text-align: center; }
+.bi2ll { font-size: clamp(18px, 4vw, 26px); font-weight: 600; }
+.bill { font-size: clamp(12px, 2vw, 14px); }
+
+/* ===================== SECTIONS ===================== */
+.every { text-align: center; padding: 60px 4%; font-weight: bold; font-size: clamp(22px,4vw,36px); background: #f7f8fb; color:#000; }
+.font2 { font-size: clamp(15px,2vw,18px); display:block; margin-top:10px; }
+
+/* ===================== HERO FEATURES ===================== */
+.body3 { display: grid; grid-template-columns: repeat(auto-fit,minmax(250px,1fr)); gap:20px; padding:50px 4%; }
+.body3children { background: #f1f2ff; padding: 20px; border-radius: 10px; }
+
+/* ===================== BODY4 / PAYMENT METHODS ===================== */
+.body4 { display: flex; flex-wrap: wrap; justify-content: space-between; padding: 50px 10%; gap: 30px; align-items: center; }
+.body4child1, .body4child2 { flex: 1 1 45%; }
+.body4child1 img, .body4child2 img { width:100%; height:auto; border-radius:10px; object-fit:cover; }
+.checklist, .checklist2 { list-style:none; margin-top:20px; }
+.checklist li::before, .checklist2 li::before { content:"✓"; margin-right:10px; color:#3b82f6; font-weight:bold; }
+.checklist li, .checklist2 li { margin-bottom:12px; font-size: clamp(14px,2vw,18px); }
+.visma { display: grid; grid-template-columns: repeat(auto-fit,minmax(120px,1fr)); gap:10px; margin-top:20px; }
+.visma span { display:flex; align-items:center; justify-content:center; gap:5px; background:#ebebf1; padding:10px; border-radius:5px; }
+
+/* ===================== PRICING ===================== */
+.starting { display: flex; justify-content: space-between; padding: 50px 10%; gap: 20px; flex-wrap: wrap; }
+.starter { flex: 1 1 30%; border: 1px solid #ddd; border-radius: 10px; padding: 30px; text-align: center; transition: transform 0.3s ease, box-shadow 0.3s ease; }
+.starter:hover { transform: translateY(-10px); box-shadow: 0 15px 25px rgba(0,0,0,0.1); border-color: #3b82f6; }
+.starter1 { font-weight: 700; font-size: 1.2rem; display:block; margin-bottom:5px; }
+.insidestart { font-size: 0.9rem; color: #555; display:block; margin-bottom:5px; }
+.free1 { font-size: 1.5rem; font-weight: 700; color: #111; display:block; margin:10px 0; }
+.starter ul { margin: 20px 0; text-align: left; padding-left: 0; }
+.starter a, .viewdoc { display:block; text-align:center; margin-top:auto; padding:10px; border-radius:5px; border:none; background:#3b82f6; color:#fff; text-decoration:none; }
+.starter a:hover, .viewdoc:hover { background:#6366f1; }
+
+/* ===================== DEVELOPER SECTION ===================== */
+.body10 { display: flex; flex-wrap: wrap; justify-content: space-between; padding: 50px 10%; gap: 30px; align-items: flex-start; background: #f9f9f9; }
+.body10child2 { flex: 1 1 45%; }
+#body10child1 { flex: 1 1 45%; display: flex; flex-direction: column; gap: 20px; width: 100%; }
+.bodychild1in1 { display: flex; flex-wrap: wrap; gap: 10px; width: 100%; }
+.bodychild1in1 button { margin-bottom: 10px; padding: 10px 15px; border: none; border-radius: 5px; background:#3b82f6; color: #fff; cursor:pointer; transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease; }
+.bodychild1in1 button:hover { transform: scale(1.05); background:#3b82f6; color:#fff; }
+.bodychild1in1 button.active-btn { background:#111; color:#fff; }
+.bodychild1in2 { position: relative; width: 100%; max-width: 100%; overflow-x: auto; overflow-y: auto; white-space: pre-wrap; word-break: break-word; border: 1px solid #ddd; border-radius: 8px; padding: 20px; min-height: 200px; max-height: 400px; background:#f9f9f9; }
+.copy-btn { position: absolute; top: 12px; right: 12px; padding: 6px 12px; font-size: 0.75rem; border: none; border-radius: 5px; background: #111; color: #fff; cursor: pointer; z-index: 10; }
+.copy-btn:active { transform: scale(0.95); }
+.copy-btn:hover { transform: scale(1.05); background: #6366f1; }
+.code-content { white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; font-family: 'Courier New', monospace; font-size: 0.85rem; margin: 0; }
+
+/* ===================== SECURITY ===================== */
+.body5 { display: flex; justify-content: space-between; flex-wrap: wrap; padding: 50px 10%; gap: 20px; }
+.body5children { flex: 1 1 45%; border: 1px solid #ddd; padding: 20px; border-radius: 10px; text-align: center; transition: transform 0.3s ease, box-shadow 0.3s ease; }
+.body5children:hover { transform: translateY(-10px); box-shadow: 0 10px 20px rgba(0,0,0,0.1); border-color: #3b82f6; }
+
+/* ===================== TRUSTED ===================== */
+.body6 { text-align: center; padding: 50px 10%; }
+.trstes1 span { margin: 0 10px; display: inline-block; font-weight: 600; }
+
+/* ===================== CONTACT ===================== */
+.body7 { padding: 50px 10%; background: #f9f9f9; }
+.body7only { display: flex; flex-wrap: wrap; gap: 30px; }
+.body7only1, .body7only2 { flex: 1 1 45%; }
+.body7only2 input, .body7only2 textarea { width: 100%; margin-bottom: 15px; padding: 10px; border-radius: 5px; border: 1px solid #ccc; }
+.body7only2 button { padding: 10px 20px; border: none; background:#3b82f6; color:#fff; border-radius: 5px; }
+.body7only2 button:hover { background: rgba(0,0,0,0.05); }
+
+/* ===================== FOOTER ===================== */
+.body8 { display: flex; flex-wrap: wrap; justify-content: space-between; background: #ffffff; padding: 50px 10%; gap: 30px; }
+.divbottom { flex: 1 1 25%; }
+.logobottom { font-weight: bold; font-size: clamp(20px, 2vw, 28px); background: linear-gradient(90deg, #3b82f6, #60a5fa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; color: transparent; display: inline-block; }
+
+
+
+.footer-socials { display: flex; gap: 12px; margin-top: 15px; }
+.footer-socials img { width: 30px; transition: transform 0.3s ease; }
+.footer-socials img:hover { transform: scale(1.1); }
+
+.divbottomothers { flex: 1 1 15%; }
+.divbottomothers span { font-weight: 600; display: block; margin-bottom: 12px; }
+.divbottomothers a { display: block; margin-bottom: 10px; font-size: 0.9rem; color: #333; }
+.divbottomothers a:hover { color: #3b82f6; }
+
+.footer-bottom { text-align: center; padding: 20px; font-size: 0.85rem; background: #fff; color: #555; }
+
+/* ===================== RESPONSIVE ===================== */
+@media (max-width: 768px) {
+  .menu-icon { display:flex; }
+  .nav-links { position: fixed; display: flex; gap: 10px; align-items: center; flex-direction: column; width: 100%; top:62px; right:-100%; opacity:0; background:#fff; padding:20px; height:auto; overflow-y:auto; transition: right 0.4s ease, opacity 0.4s ease; z-index:100; }
+  .nav-links.active { right:0; opacity:1; }
+  .nav-links a { width: 100%; text-align: center; padding: 15px 0; border-radius: 8px; }
+
+  .body4, .body10, .starting, .body5, .body7only { flex-direction: column; box-sizing: border-box; }
+  .body4child1, .body4child2, .body10child2, #body10child1, .starter, .body5children, .body7only1, .body7only2 { flex: 1 1 100%; }
+  .body8 { flex-direction: column; align-items: flex-start; padding: 40px 5%; }
+  .divbottom, .divbottomothers { flex: 1 1 100%; margin-bottom: 20px; }
+  .divbottomothers a { margin-bottom: 8px; }
+  .divbottom a img { margin-right: 8px; }
+}
+
+@media (max-width:480px) {
+  .div100 { flex-direction: column; padding: 80px 4% 40px; }
+  .gerrr a { width: 100%; text-align: center; }
+  .divbottom span.font2 { font-size: 0.85rem; }
+  .divbottom a img { width: 24px; height: 24px; }
+  .divbottom span.logobottom { width: max-content; }
+  #div100child2 img{width: 100%;max-width: 100%; height: auto; object-fit: contain;}
+}
+</style>
+<body>
+
+  <!-- NAVBAR -->
+  <nav class="navbar">
+    <div class="logo"><a href="index.html">SwiftPay</a></div>
+    <div class="nav-links" id="navLinks">
+      <a href="folder/products.html">Products</a>
+      <a href="folder/pricing.html">Pricing</a>
+      <a href="folder/developers.html">Developers</a>
+      <a href="folder/company.html">Company</a>
+      <a href="/onboarding.html?tab=login" class="headerlogin">Login</a>
+      <a href="folder/pricing.html" class="headersignup">Sign up</a>
+    </div>
+    <div class="menu-icon" id="menuIcon"><span></span><span></span><span></span></div>
+  </nav>
+
+  <!-- HERO -->
+  <div class="div100">
+    <div id="div100child1">
+      <span id="logo1">Accept Bank Transfers Across Nigeria in <span class="minutes">Minutes</span></span>
+      <span class="font1">Developer-friendly Payment APIs for dedicated bank transfer accounts. Get started in minutes with real-time analytics and seamless integration.</span>
+      <div class="gerrr">
+        <a href="#starsrs" id="a11">Get Started</a>
+        <a href="folder/viewdocs.html" id="a12">View Documentation</a>
+      </div>
+      <div class="div3">
+        <div><span class="bi2ll">NGN</span><br><span class="bill">Supported currency</span></div>
+        <div><span class="bi2ll">Bank Transfer</span><br><span class="bill">Collection method</span></div>
+        <div><span class="bi2ll">Nigeria</span><br><span class="bill">Coverage</span></div>
+      </div>
+    </div>
+    <div id="div100child2"><img src="folder/payment_dashboard_analytics_interface_8d3993e3.png" alt=""></div>
+  </div>
+
+  <!-- EVERYTHING YOU NEED -->
+  <div class="every">
+    <span>Everything you need to accept and send out payment</span>
+    <span class="font2">Build for developers, trusted by businesses. Our platform provides all the tools you need to scale your transfer-based payment operations.</span>
+  </div>
+
+  <!-- HERO FEATURES -->
+  <div class="body3">
+    <div class="body3children"><strong>Dedicated Bank Transfer Accounts</strong><p>Give every customer a unique account number for bank transfers, matched automatically to their order.</p></div>
+    <div class="body3children"><strong>Developer-First APIs</strong><p>Clean well-documented REST APIs with SDKs for all major languages</p></div>
+    <div class="body3children"><strong>Real-time analytics</strong><p>Track payments, conversations, and revenue with live dashboard insights.</p></div>
+    <div class="body3children"><strong>Instant integration</strong><p>Go live in minutes with our simple setup process and quick start guides.</p></div>
+    <div class="body3children"><strong>Security by design</strong><p>Signed webhooks, SSRF-hardened outbound delivery, and full audit logging on every money-moving action.</p></div>
+    <div class="body3children"><strong>NGN Support</strong><p>Process Nigerian Naira bank transfers with a double-entry ledger backing every transaction.</p></div>
+  </div>
+
+  <!-- BODY4: Build for Developers & Payment Methods -->
+  <div class="body4">
+    <div class="body4child2" id="bbb1d">
+      <img src="folder/screenshot_20251114_143316_replit.jpg" alt="">
+    </div>
+    <div class="body4child1" id="bbb2d">
+      <span class="buildfor">Build for Developers </span><br><br>
+      <span class="font2">Integrate payments in minutes with our powerful, well-documented APIs.</span><br>
+      <span class="font2">Start accepting payments with just a few lines of code.</span><br><br><br>
+      <ul class="checklist">
+        <li>RESTful API with comprehensive documentation</li>
+        <li>SDKs for Node.js, Python, PHP, and more</li>
+        <li>Webhook support for real-time notifications</li>
+        <li>Sandbox environment for testing</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="body4">
+    <div class="body4child2">
+      <span class="buildfor">Bank Transfer Collections</span><br><br>
+      <span class="font2">Give your customers a dedicated account number to transfer into, matched automatically to their order via webhook.</span><br><br>
+      <div class="visma">
+        <span>Bank Transfer</span>
+        <span>Dedicated Virtual Accounts</span>
+      </div>
+    </div>
+    <div  class="body4child1" id="body4chi">
+      <img src="folder/screenshot_20251116_200413_replit.jpg" alt="">
+    </div>
+  </div>
+
+  <!-- Simple Pricing -->
+  <div class="every" id="starsrs">
+      <span>Simple, Transparent Pricing</span><br>
+      <span class="font2">Start free, scale as you grow. No hidden fees, no surprises. Just straightforward pricing that works for your business.</span>
+  </div>
+
+  <!-- Pricing Plans -->
+  <div class="starting">
+      <div class="starter">
+        <span class="starter1">Starter</span>
+        <span class="insidestart">Perfect for startups and small businesses</span>
+        <span class="free1">Free</span><br><br>
+        <ul class="checklist">
+          <li>Up to 100 transactions/month</li>
+          <li> Cards & Bank Transfer</li>
+          <li> Basic analytics</li>
+          <li> Email support</li>
+          <li> Standard API access</li>
+        </ul>
+        <a href="/onboarding.html?tab=register&plan=starter" class="pricing-btn">Starter Plan</a>
+      </div>
+      <div class="starter">
+        <span class="starter1">Growth</span>
+        <span class="insidestart">For growing businesses that needs more</span>
+        <span class="free1">$99<span class="insidestart">/month</span></span>
+        <ul class="checklist">
+          <li>Unlimited transactions</li>
+          <li> All payment methods</li>
+          <li> Advanced analytics</li>
+          <li> Priority support</li>
+          <li> Webhooks & Custom branding</li>
+          <li> Fraud detection</li>
+        </ul>
+        <a href="/onboarding.html?tab=register&plan=growth" class="pricing-btn">Growth Plan</a>
+      </div>
+      <div class="starter">
+        <span class="starter1">Enterprise</span>
+        <span class="insidestart">Tailored solution for large organisations</span>
+        <span class="free1">Custom</span><br><br>
+        <ul class="checklist">
+          <li> Everything in Growth</li>
+          <li> Dedicated account manager</li>
+          <li> Custom integrations</li>
+          <li> SLA guarantees</li>
+          <li> Volume discounts</li>
+          <li> White-label solutions</li>
+        </ul>
+        <a href="/onboarding.html?tab=register&plan=enterprise" class="pricing-btn">Enterprise Plan</a>
+      </div>
+  </div>
+
+
+
+
+
+  <div class="allplans">
+      <span class="insidestart">All plans include 1.9% + $0.10 per successful transaction. Volume discounts available for Enterprise.</span>
+  </div>
+
+  <!-- Developer Build Section -->
+ <!-- Developer Build Section -->
+  <div class="body10">
+  <div class="body10child2">
+    <span class="buildfor">Build for Developers</span><br><br>
+    <span class="font2">Get started in minutes with our comprehensive documentation, SDKs, and developer tools. Accept your first payment with just a few lines of code.</span><br><br><br>
+    <ul class="checklist2">
+      <li>Comprehensive API documentation</li>
+      <li>SDKs for popular languages</li>
+      <li>Interactive API explorer</li>
+      <li>Webhook testing tools</li>
+      <li>24/7 developer support</li>
+    </ul><br>
+    <a href="folder/viewdocs.html"  id="a12" class="viewdoc" >View Documentation</a>
+  </div>
+
+  <div id="body10child1">
+    <!-- Buttons -->
+    <div class="bodychild1in1">
+      <button data-lang="CURL">CURL</button>
+      <button data-lang="Node">Node.js</button>
+      <button data-lang="Dotnet">DotNet</button>
+      <button data-lang="Python">PYTHON</button>
+    </div>
+
+    <!-- Code display box -->
+    <div class="bodychild1in2">
+      <button class="copy-btn">Copy</button>
+      <pre class="code-content"></pre>
+    </div>
+  </div>
+  </div>
+
+
+
+  <!-- Security Section -->
+  <div class="every">
+      <span>Security, Built In</span><br>
+      <span class="font2">Every money-moving action is signed, rate-limited, and audit-logged.</span>
+  </div>
+
+  <div class="body5">
+      <div class="body5children">
+        <span>Signed Webhooks</span>
+        <span>HMAC-verified provider webhooks and signed merchant webhook delivery</span>
+      </div>
+      <div class="body5children">
+        <span>TLS Encryption</span>
+        <span>All traffic to and from the API is encrypted in transit</span>
+      </div>
+      <div class="body5children">
+        <span>Double-Entry Ledger</span>
+        <span>Every financial event is recorded atomically and auditable</span>
+      </div>
+      <div class="body5children">
+        <span>Full Audit Logging</span>
+        <span>Every admin action and financial state change is logged</span>
+      </div>
+  </div>
+
+  <!-- Trusted Section -->
+  <div class="body6">
+      <span class="trstes">Built on Nigerian Bank Transfer Rails</span><br><br>
+  </div>
+
+  <!-- Contact / Demo Section -->
+  <div class="body7">
+    <div class="body7only">
+      <div class="body7only1">
+        <span class="ready">Ready to Get Started?</span><br><br>
+        <span class="font2">Start accepting Nigerian bank transfers with SwiftPay's developer-first API. Get started in minutes with our easy integration.</span><br><br>
+        <span class="free1">Contact Information</span><br><br>
+        <span class="font2">Email: hello@swiftpay.io</span><br>
+        <span class="font2">Phone: +234 800 000 0000</span><br><br>
+        <span class="free1">Business Hours</span><br><br>
+        <span class="font2">Monday - Friday: 9AM - 6PM WAT</span><br>
+        <span class="font2">Saturday - Sunday: Closed</span>
+      </div>
+      <div class="body7only2">
+        <form action="#" method="post">
+
+        <div><input type="text" id="Full-Name" autocomplete="on" placeholder="Full Name"></div>
+        <div><input type="text" id="Email" autocomplete="on" placeholder="Email Address"></div>
+        <div><input type="text" id="companyname" autocomplete="on" placeholder="Company Name"></div>
+        <div><textarea id="textarea" placeholder="Tell us about your use case...."></textarea></div>
+        <div><button type="button">Request Demo</button></div>
+        <div class="form-message" style="display:none; color:green; margin-bottom:10px;"></div> 
+        </form> 
+      </div>
+    </div>
+  </div>
+  <!-- ... add rest of sections as is ... -->
+
+  <!-- FOOTER -->
+  <footer class="body8">
+    <div class="divbottom">
+      <span class="logobottom">SwiftPay</span><br><br>
+      <span class="font2">Transfer-based payment infrastructure for merchants.</span>
+      <div class="footer-socials">
+        <a href="#"><img src="folder/xxlogo.jpeg" alt="X logo"></a>
+        <a href="#"><img src="folder/githublogo.png" alt="GitHub logo"></a>
+        <a href="#"><img src="folder/linked.png" alt="LinkedIn logo"></a>
+      </div>
+    </div>
+
+    <div class="divbottomothers">
+      <span>Products</span>
+      <a href="#">Payment Gateway</a>
+      <a href="#">Virtual Accounts</a>
+      <a href="#">Transfers</a>
+      <a href="#">Subscriptions</a>
+    </div>
+
+    <div class="divbottomothers">
+      <span>Developers</span>
+      <a href="folder/viewdocs.html">Documentation</a>
+      <a href="#">API Reference</a>
+      <a href="#">SDKs</a>
+      <a href="#">Status</a>
+    </div>
+
+    <div class="divbottomothers">
+      <span>Company</span>
+      <a href="#">About Us</a>
+      <a href="#">Careers</a>
+      <a href="#">Blog</a>
+      <a href="#">Contact</a>
+    </div>
+
+    <div class="divbottomothers">
+      <span>Legal</span>
+      <a href="folder/privacy_policy.html">Privacy Policy</a>
+      <a href="folder/terms_of_service.html">Terms of Service</a>
+      <a href="folder/cookie_policy.html">Cookie Policy</a>
+      <a href="folder/security.html">Security</a>
+    </div>
+  </footer>
+
+  <div class="footer-bottom">
+    <span>©️ 2026 SwiftPay. All rights reserved.</span>
+  </div>
+  <script src="script.js"></script>
+
+<a href="demo.html" class="swiftpay-demo-fab" aria-label="Try live demo checkout">
+  <span class="fab-ic">&#9889;</span>
+  <span class="fab-txt">Try Live Demo</span>
+</a>
+<style>
+.swiftpay-demo-fab {
+  position: fixed;
+  right: 22px;
+  bottom: 26px;
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+  color: #fff;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 14px;
+  padding: 13px 20px 13px 16px;
+  border-radius: 999px;
+  box-shadow: 0 8px 24px rgba(59,130,246,.35);
+  text-decoration: none;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.swiftpay-demo-fab:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(59,130,246,.45); color: #fff; }
+.swiftpay-demo-fab .fab-ic { font-size: 16px; }
+@media (max-width: 640px) {
+  .swiftpay-demo-fab .fab-txt { display: none; }
+  .swiftpay-demo-fab { padding: 14px; border-radius: 50%; }
+}
+</style>
+</body>
+</html>

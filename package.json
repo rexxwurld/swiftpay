@@ -1,0 +1,73 @@
+{
+  "name": "swiftpay",
+  "version": "2.0.0",
+  "description": "SwiftPay - A Paystack-style payment infrastructure: merchants, customers, dedicated virtual accounts, mock bank partner, wallets, transactions and webhooks.",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "worker": "node src/queue/webhookWorker.js",
+    "worker:merchant-webhooks": "node src/queue/merchantWebhookWorker.js",
+    "worker:outbox": "node src/queue/outboxWorker.js",
+    "worker:dev": "nodemon src/queue/webhookWorker.js",
+    "worker:outbox:dev": "nodemon src/queue/outboxWorker.js",
+    "provision-bank-pool": "node scripts/provision-rexxpay-bank-pool.js",
+    "auto-provision-pool": "node scripts/auto-provision-pool.js",
+    "release-stale-accounts": "node scripts/release-stale-accounts.js",
+    "reactivate-expired-accounts": "node scripts/reactivate-expired-accounts.js",
+    "reconcile": "node scripts/reconcile.js",
+    "fetch-and-reconcile": "node scripts/fetch-and-reconcile.js",
+    "reconcile-outbound": "node scripts/reconcile-outbound.js",
+    "run-settlement": "node scripts/run-settlement.js",
+    "generate-invoices": "node scripts/generate-invoices.js",
+    "create-admin-user": "node scripts/create-admin-user.js",
+    "test": "jest --runInBand",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage --runInBand",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "axios": "^1.7.2",
+    "bcrypt": "^5.1.1",
+    "bullmq": "^5.12.0",
+    "ioredis": "^5.4.1",
+    "chart.js": "4.4.4",
+    "chartjs-adapter-date-fns": "3.0.0",
+    "chartjs-chart-financial": "0.2.1",
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
+    "date-fns": "^4.4.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.4.0",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.5.0",
+    "morgan": "^1.10.0",
+    "nanoid": "^3.3.7",
+    "otplib": "^12.0.1",
+    "pino": "^9.3.2",
+    "swagger-ui-express": "^5.0.1",
+    "yamljs": "^0.3.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "jest": "^29.7.0",
+    "mongodb-memory-server": "^9.4.1",
+    "nodemon": "^3.1.4",
+    "pino-pretty": "^11.2.2",
+    "supertest": "^7.0.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": [
+      "**/tests/**/*.test.js"
+    ],
+    "collectCoverageFrom": [
+      "src/**/*.js",
+      "!src/server.js",
+      "!src/queue/webhookWorker.js"
+    ]
+  }
+}

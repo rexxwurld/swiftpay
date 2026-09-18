@@ -1,0 +1,422 @@
+erDiagram
+    MERCHANT ||--o{ CUSTOMER : "onboards"
+    MERCHANT ||--o{ VIRTUAL_ACCOUNT : "owns (via assignment)"
+    MERCHANT ||--o{ WALLET : "has settlement wallet per currency"
+    MERCHANT ||--o{ PAYOUT : "requests"
+    MERCHANT ||--o{ WITHDRAWAL : "requests (always to its own verified settlement account)"
+    MERCHANT ||--o{ SUBACCOUNT : "owns (split partner)"
+    MERCHANT ||--o{ RECIPIENT : "saves (payout destination)"
+    MERCHANT ||--o{ PLAN : "defines"
+    MERCHANT ||--o{ SUBSCRIPTION : "runs"
+    MERCHANT ||--o{ INVOICE : "bills"
+    MERCHANT ||--o{ REFUND : "issues"
+    MERCHANT ||--o{ DISPUTE : "faces"
+    MERCHANT ||--o{ SUBACCOUNT_SETTLEMENT : "settles out"
+    MERCHANT ||--o{ AUDIT_LOG : "actor on"
+
+    CUSTOMER ||--o| VIRTUAL_ACCOUNT : "assigned to"
+    CUSTOMER ||--o{ TRANSACTION : "makes"
+    CUSTOMER ||--o{ SUBSCRIPTION : "subscribes to"
+    CUSTOMER ||--o{ INVOICE : "owes"
+
+    BANK_PARTNER ||--o{ VIRTUAL_ACCOUNT : "provisions (pool)"
+
+    VIRTUAL_ACCOUNT ||--o{ TRANSACTION : "receives"
+    VIRTUAL_ACCOUNT ||--o| INVOICE : "pay-in target for"
+    VIRTUAL_ACCOUNT ||--o| SUBACCOUNT : "checkout split target (optional)"
+    VIRTUAL_ACCOUNT ||--o| CHECKOUT : "backs hosted checkout session"
+
+    MERCHANT ||--o{ CHECKOUT : "runs"
+    CUSTOMER ||--o{ CHECKOUT : "pays via"
+
+    WALLET ||--o{ TRANSACTION : "credited by"
+    WALLET ||--o{ LEDGER_ENTRY : "reconstructed from (accountType=merchant_wallet)"
+
+    SUBACCOUNT ||--o{ TRANSACTION : "receives split of"
+    SUBACCOUNT ||--o{ SUBACCOUNT_SETTLEMENT : "settled by"
+    SUBACCOUNT ||--o{ LEDGER_ENTRY : "reconstructed from (accountType=subaccount_settlement)"
+
+    RECIPIENT ||--o{ PAYOUT : "referenced by (destination)"
+
+    PLAN ||--o{ SUBSCRIPTION : "subscribed via"
+    SUBSCRIPTION ||--o{ INVOICE : "bills each cycle"
+
+    TRANSACTION ||--o| WEBHOOK_EVENT : "processed from"
+    TRANSACTION ||--o{ LEDGER_ENTRY : "posts"
+    TRANSACTION ||--o| INVOICE : "settles"
+    TRANSACTION ||--o{ REFUND : "reversed (partially/fully) by"
+    TRANSACTION ||--o{ DISPUTE : "may be disputed by"
+    TRANSACTION }o--o| SETTLEMENT_BATCH : "moved by (settle/make_available phase)"
+
+    PAYOUT ||--o{ LEDGER_ENTRY : "posts"
+    WITHDRAWAL ||--o{ LEDGER_ENTRY : "posts"
+    SUBACCOUNT_SETTLEMENT ||--o{ LEDGER_ENTRY : "posts"
+    REFUND ||--o{ LEDGER_ENTRY : "posts"
+
+    TRANSACTION ||--o| AUDIT_LOG : "may generate"
+    PAYOUT ||--o| AUDIT_LOG : "may generate"
+
+    MERCHANT {
+        string merchant_id PK
+        string business_name
+        string email
+        string password_hash
+        string webhook_url
+        string webhook_secret
+        string test_public_key
+        string test_secret_key_hash
+        string live_public_key
+        string live_secret_key_hash
+        boolean is_verified
+        string default_currency
+        integer fees_percentage_bps "nullable, overrides config/fees.js default"
+        integer fees_fixed_minor "nullable, overrides config/fees.js default"
+        integer fees_cap_minor "nullable, overrides config/fees.js default"
+        boolean two_factor_enabled
+        datetime created_at
+        datetime updated_at
+    }
+
+    CUSTOMER {
+        string customer_id PK
+        string merchant_id FK
+        string full_name
+        string email
+        string phone
+        string virtual_account_id FK "nullable, current assignment"
+        datetime created_at
+        datetime updated_at
+    }
+
+    BANK_PARTNER {
+        string bank_id PK
+        string name
+        string slug
+        datetime created_at
+    }
+
+    VIRTUAL_ACCOUNT {
+        string account_number PK
+        string bank_id FK
+        string merchant_id FK "nullable until assigned"
+        string customer_id FK "nullable until assigned"
+        string status "available | assigned | deactivated"
+        datetime assigned_at
+        datetime deactivated_at
+        datetime cooldown_until "set on deactivation; account can't be reused until this passes"
+        integer amount_expected "minor units, nullable - fixed checkout amount"
+        string reference "merchant's own order reference, server-side only"
+        string split_subaccount_id FK "nullable - optional split config for this checkout"
+        integer split_percentage "nullable"
+        datetime created_at
+        datetime updated_at
+    }
+
+    WALLET {
+        string wallet_id PK
+        string merchant_id FK
+        integer balance "minor units - cache, ledger is source of truth"
+        string currency
+        datetime updated_at
+    }
+
+    TRANSACTION {
+        string transaction_id PK
+        string reference "our idempotency key, unique"
+        string account_number FK
+        string customer_id FK
+        string merchant_id FK
+        integer amount_expected "minor units, nullable"
+        integer amount_received "minor units"
+        string currency
+        string status "pending | success | partial | over | failed | flagged"
+        string flag_reason "set when status = flagged"
+        string channel
+        string bank_reference "bank partner's own transaction ID"
+        string split_subaccount_id FK "nullable"
+        integer split_amount "minor units, sent to subaccount"
+        integer platform_fee "minor units, deducted from merchant share"
+        integer net_amount "minor units, what actually credited the wallet"
+        string settlement_status "pending_settlement | settled | available (nullable - only set once status=success)"
+        datetime settled_at "nullable"
+        datetime available_at "nullable"
+        string settlement_batch_id FK "nullable, set once moved by a settlement batch"
+        datetime created_at
+        datetime updated_at
+    }
+
+    WEBHOOK_EVENT {
+        string event_id PK
+        string source "default: bank_partner"
+        string raw_body "persisted before processing, for replay/audit"
+        string signature
+        string status "queued | processing | processed | failed"
+        integer attempts
+        string last_error
+        datetime processed_at
+        datetime created_at
+    }
+
+    PAYOUT {
+        string payout_id PK
+        string merchant_id FK
+        string recipient_id FK "nullable - saved recipient used, if any"
+        string reference "SwiftPay's own internal reference, unique - NOT the caller's idempotency key"
+        string idempotency_key "caller-supplied, required in live mode; unique per (merchant, mode)"
+        string request_fingerprint "hash of amount+currency+destination - detects a reused idempotency_key for a materially different request"
+        string mode "test | live"
+        integer amount "minor units"
+        string currency
+        string destination_bank_code
+        string destination_account_number
+        string destination_account_name
+        string status "pending | reserved | processing | finalizing | successful | failed | ambiguous | reversing | reversed"
+        string failure_reason
+        string provider_ref "real disbursement provider's transaction ID, once wired up"
+        datetime created_at
+        datetime updated_at
+    }
+
+    WITHDRAWAL {
+        string withdrawal_id PK
+        string merchant_id FK
+        string reference "SwiftPay's own internal reference, unique"
+        string idempotency_key "caller-supplied, required in live mode; unique per (merchant, mode)"
+        string request_fingerprint "hash of amount+currency+destination"
+        string mode "test | live"
+        integer amount "minor units"
+        string currency
+        string destination_bank_code "always the merchant's OWN verified settlement account, unlike Payout"
+        string destination_account_number
+        string destination_account_name
+        string status "pending | reserved | processing | finalizing | successful | failed | ambiguous | reversing | reversed"
+        string failure_reason
+        string provider_ref
+        datetime created_at
+        datetime updated_at
+    }
+
+    SUBACCOUNT {
+        string subaccount_id PK
+        string merchant_id FK "parent merchant"
+        string subaccount_code "e.g. sub_xxxxx, referenced at checkout"
+        string business_name
+        string settlement_bank_code
+        string settlement_account_number
+        string settlement_account_name
+        integer default_split_percentage "nullable, 1-100"
+        boolean active
+        datetime created_at
+        datetime updated_at
+    }
+
+    SUBACCOUNT_SETTLEMENT {
+        string settlement_id PK
+        string subaccount_id FK
+        string parent_merchant_id FK
+        string reference "our idempotency key, unique"
+        integer amount "minor units"
+        string currency
+        string status "pending | processing | successful | failed | reversed"
+        string failure_reason
+        string provider_ref
+        datetime created_at
+        datetime updated_at
+    }
+
+    RECIPIENT {
+        string recipient_id PK
+        string merchant_id FK
+        string recipient_code "e.g. rcp_xxxxx, referenced at payout time"
+        string label
+        string bank_code
+        string account_number
+        string account_name
+        boolean active
+        datetime created_at
+        datetime updated_at
+    }
+
+    PLAN {
+        string plan_id PK
+        string merchant_id FK
+        string plan_code "e.g. plan_xxxxx"
+        string name
+        integer amount "minor units, charged each interval"
+        string currency
+        string mode "test | live - set once from the API key used to create the plan; every invoice/virtual account it generates inherits this (see audit report, High #11)"
+        string interval "daily | weekly | monthly | yearly"
+        integer interval_count "e.g. 3 + monthly = every 3 months"
+        boolean active
+        datetime created_at
+        datetime updated_at
+    }
+
+    SUBSCRIPTION {
+        string subscription_id PK
+        string merchant_id FK
+        string customer_id FK
+        string plan_id FK
+        string subscription_code "e.g. sub_xxxxx"
+        string mode "test | live - copied from plan.mode at subscribe time"
+        string status "active | past_due | cancelled"
+        datetime current_period_start
+        datetime current_period_end
+        datetime next_billing_date
+        datetime cancelled_at
+        datetime created_at
+        datetime updated_at
+    }
+
+    INVOICE {
+        string invoice_id PK
+        string merchant_id FK
+        string customer_id FK
+        string subscription_id FK
+        string invoice_number "e.g. inv_xxxxx"
+        integer amount "minor units"
+        string currency
+        string mode "test | live - copied from subscription.mode"
+        datetime period_start
+        datetime period_end
+        datetime due_date
+        string status "pending | paid | failed | void"
+        string virtual_account_id FK "nullable - pay-in target"
+        string transaction_id FK "nullable - the transaction that paid it"
+        datetime paid_at
+        datetime created_at
+        datetime updated_at
+    }
+
+    REFUND {
+        string refund_id PK
+        string merchant_id FK
+        string transaction_id FK
+        string reference "SwiftPay's own internal reference, unique - NOT the caller's idempotency key"
+        string idempotency_key "caller-supplied, required in live mode; unique per (merchant, idempotency_key, mode)"
+        string request_fingerprint "hash of transaction_id+amount+destination"
+        string mode "test | live - copied from the transaction being refunded"
+        integer amount "minor units"
+        string currency
+        string reason
+        string destination_bank_code
+        string destination_account_number
+        string destination_account_name
+        string status "pending | processing | successful | failed | reversed"
+        string failure_reason
+        string provider_ref
+        datetime created_at
+        datetime updated_at
+    }
+
+    DISPUTE {
+        string dispute_id PK
+        string merchant_id FK
+        string transaction_id FK
+        string dispute_code "e.g. dp_xxxxx"
+        integer amount "minor units, frozen from merchant wallet"
+        string currency
+        string reason "fraudulent | duplicate | product_not_received | product_unacceptable | unrecognized | other"
+        string reason_detail
+        string status "open | under_review | won | lost"
+        datetime evidence_due_by
+        string resolution
+        datetime resolved_at
+        datetime created_at
+        datetime updated_at
+    }
+
+    LEDGER_ENTRY {
+        string entry_id PK
+        string entry_group "groups the debit+credit pair for one economic event"
+        string account_type "merchant_wallet | platform_revenue | payout_clearing | subaccount_settlement | suspense"
+        string account_ref "Merchant _id, Subaccount _id, or a fixed platform-level slug"
+        string direction "debit | credit"
+        integer amount "always positive, minor units"
+        string currency
+        string mode "test | live - part of account identity; test and live money can never net into the same balance (see computeBalance)"
+        string source_type "incoming_payment | payout | refund | adjustment | reversal"
+        string source_ref "Transaction._id, Payout._id, or Refund._id"
+        string description
+        datetime created_at
+    }
+
+    AUDIT_LOG {
+        string log_id PK
+        string actor_type "merchant | system | bank_partner | admin"
+        string actor_ref "merchant id, 'webhook', 'reconciliation_job', etc."
+        string action "e.g. merchant.login, webhook.signature_invalid, payout.created"
+        string entity_type "e.g. Transaction, Payout, Merchant"
+        string entity_ref
+        string ip
+        string severity "info | warning | critical"
+        datetime created_at
+    }
+
+    CHECKOUT {
+        string checkout_id PK
+        string token "256-bit random value, the only identifier in the hosted checkout URL"
+        string merchant_id FK
+        string customer_id FK
+        string virtual_account_id FK
+        string tx_ref "merchant's own reference - real idempotency key: unique per (merchant, mode, tx_ref), DB-enforced"
+        string mode "test | live"
+        string account_number
+        string bank_name "nullable"
+        integer amount_expected "minor units, nullable"
+        string redirect_url "server-side only, never returned from the public status endpoint"
+        datetime expires_at
+        datetime created_at
+        datetime updated_at
+    }
+
+    SETTLEMENT_BATCH {
+        string batch_id PK
+        string batch_reference "unique"
+        string phase "settle | make_available"
+        string currency
+        datetime cutoff_time "everything eligible as of this instant"
+        string status "processing | completed | failed"
+        integer transaction_count
+        integer total_amount "minor units"
+        datetime started_at
+        datetime completed_at "nullable"
+        string error "nullable"
+        datetime created_at
+        datetime updated_at
+    }
+
+    ADMIN_USER {
+        string admin_user_id PK
+        string email "unique"
+        string password_hash
+        string role "superadmin | finance | support - finance/superadmin can resolve stuck payouts/withdrawals/refunds and release/reject flagged transactions"
+        boolean active
+        datetime last_login_at
+        datetime created_at
+        datetime updated_at
+    }
+
+    CRON_LOCK {
+        string lock_name PK "e.g. 'pool-provisioning', 'run-settlement' - one document per lockable job"
+        datetime acquired_at
+        datetime expires_at "TTL-indexed safety net in case a process crashes without releasing the lock"
+    }
+
+    OUTBOX_EVENT {
+        string outbox_event_id PK
+        string event_type "deactivate_virtual_account | dispatch_merchant_webhook | mark_invoice_paid"
+        string source_type "e.g. 'transaction'"
+        string source_ref "the Transaction._id this event exists because of"
+        json payload
+        string status "pending | processing | completed | failed"
+        integer attempts
+        integer max_attempts
+        string last_error
+        datetime available_at "not claimable until this time - used for both initial delay and retry backoff"
+        datetime claimed_at
+        datetime completed_at
+        datetime created_at "created in the SAME DB transaction as the Transaction it references - this atomicity is the entire point (see audit report, item 8)"
+    }
+
+    TRANSACTION ||--o{ OUTBOX_EVENT : "atomically enqueues post-payment side effects for"

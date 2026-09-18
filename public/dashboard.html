@@ -1,0 +1,1340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SwiftPay — Dashboard</title>
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+  :root {
+    --brand: #0ea5e9;
+    --brand-dark: #0284c7;
+    --brand-darker: #0369a1;
+    --brand-50: #f0f9ff;
+    --brand-100: #e0f2fe;
+    --brand-600: #0284c7;
+    --ink: #0e1b2c;
+    --ink-dim: #5c6b7f;
+    --ink-faint: #94a3b8;
+    --line: #e6ebf1;
+    --line-soft: #f0f3f7;
+    --surface: #ffffff;
+    --bg: #f4f7fb;
+    --green: #16a34a;
+    --green-bg: #e7f8ed;
+    --amber: #b45309;
+    --amber-bg: #fef3c7;
+    --red: #dc2626;
+    --red-bg: #fee2e2;
+    --blue: #2563eb;
+    --blue-bg: #dbeafe;
+    --violet: #7c3aed;
+    --violet-bg: #f1e9fe;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+    --sans: 'Inter', system-ui, -apple-system, sans-serif;
+    --sidebar-w: 240px;
+    --topbar-h: 60px;
+    --r-lg: 16px;
+    --r-md: 12px;
+    --r-sm: 8px;
+    --shadow-sm: 0 1px 2px rgba(14,27,44,0.05);
+    --shadow-md: 0 6px 20px -8px rgba(14,27,44,0.12);
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; text-decoration: none; }
+  svg { display: block; }
+
+  /* ---------- Icons ---------- */
+  .icon { width: 17px; height: 17px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* ---------- Buttons ---------- */
+  .btn {
+    display: inline-flex; align-items: center; gap: 7px; justify-content: center;
+    font-family: var(--sans);
+    font-size: 13.5px;
+    font-weight: 600;
+    padding: 9px 16px;
+    border-radius: var(--r-sm);
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink);
+    cursor: pointer;
+    transition: all .15s ease;
+    white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--brand); color: var(--brand-darker); }
+  .btn-primary {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--white, #fff);
+  }
+  .btn-primary:hover { background: #1a2a40; border-color: #1a2a40; color: #fff; }
+  .btn-accent {
+    background: var(--brand);
+    border-color: var(--brand);
+    color: #fff;
+    box-shadow: 0 4px 14px -4px rgba(14,165,233,0.5);
+  }
+  .btn-accent:hover { background: var(--brand-dark); border-color: var(--brand-dark); color: #fff; }
+  .btn-ghost { background: transparent; border-color: transparent; color: var(--ink-dim); }
+  .btn-ghost:hover { background: var(--brand-50); color: var(--brand-darker); }
+  .btn-sm { padding: 6px 12px; font-size: 12.5px; }
+  .btn-danger-outline { border-color: var(--red); color: var(--red); background: var(--surface); }
+  .btn-danger-outline:hover { background: var(--red-bg); }
+  .btn-block { width: 100%; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* ---------- Topbar ---------- */
+  .topbar {
+    height: var(--topbar-h);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 0 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+    position: sticky;
+    top: 0;
+    z-index: 50;
+  }
+  .topbar-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .brand { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-weight: 700; font-size: 15px; color: var(--brand-darker); flex: none; }
+  .brand .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 0 4px var(--brand-100); }
+  .menu-toggle {
+    display: none;
+    border: 1px solid var(--line); background: var(--surface); border-radius: var(--r-sm);
+    width: 34px; height: 34px; align-items: center; justify-content: center; cursor: pointer; flex: none;
+  }
+  .crumb { font-size: 13px; color: var(--ink-dim); font-weight: 600; display: none; }
+  .topbar-right { display: flex; align-items: center; gap: 10px; flex: none; }
+  .mode-pill {
+    display: flex; align-items: center; gap: 6px;
+    font-family: var(--mono); font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+    background: var(--green-bg); color: var(--green); border: 1px solid #bdeecb;
+    border-radius: 20px; padding: 5px 12px;
+  }
+  .mode-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+  .user-chip {
+    display: flex; align-items: center; gap: 9px; padding: 4px 6px 4px 4px;
+    border-radius: 20px; border: 1px solid var(--line); background: var(--surface); cursor: default;
+  }
+  .avatar {
+    width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, var(--brand), var(--violet));
+    color: #fff; font-family: var(--mono); font-weight: 700; font-size: 12px;
+    display: flex; align-items: center; justify-content: center; flex: none;
+  }
+  .user-chip .who { display: flex; flex-direction: column; line-height: 1.2; max-width: 130px; }
+  .user-chip .who .nm { font-size: 12.5px; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .user-chip .who .em { font-size: 10.5px; color: var(--ink-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* ---------- Shell / layout ---------- */
+  .shell { display: flex; align-items: flex-start; }
+  .backdrop { display: none; }
+
+  /* ---------- Sidebar ---------- */
+  .sidebar {
+    width: var(--sidebar-w);
+    flex: none;
+    position: sticky;
+    top: var(--topbar-h);
+    height: calc(100vh - var(--topbar-h));
+    overflow-y: auto;
+    padding: 18px 12px 30px;
+    border-right: 1px solid var(--line);
+    background: var(--surface);
+  }
+  .sidebar-group { margin-bottom: 16px; }
+  .sidebar-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--ink-faint);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    padding: 0 12px;
+    margin-bottom: 6px;
+  }
+  .side-link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    text-align: left;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--ink-dim);
+    background: none;
+    border: none;
+    border-radius: var(--r-sm);
+    padding: 9px 12px;
+    cursor: pointer;
+    margin-bottom: 2px;
+    position: relative;
+  }
+  .side-link .ic { width: 17px; flex: none; opacity: .75; }
+  .side-link:hover { background: var(--brand-50); color: var(--brand-darker); }
+  .side-link:hover .ic { opacity: 1; }
+  .side-link.active { background: var(--ink); color: #fff; }
+  .side-link.active .ic { opacity: 1; }
+  .side-link .badge-count {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    background: var(--amber-bg);
+    color: var(--amber);
+    border-radius: 20px;
+    padding: 1px 7px;
+    min-width: 16px;
+    text-align: center;
+  }
+  .side-link.active .badge-count { background: rgba(255,255,255,.18); color: #fff; }
+  .sidebar-foot { padding: 10px 12px 0; border-top: 1px solid var(--line-soft); margin-top: 6px; }
+
+  /* ---------- Main ---------- */
+  .main { flex: 1; min-width: 0; padding: 26px 28px 64px; max-width: 1180px; margin: 0 auto; }
+
+  /* ---------- Page head / hero ---------- */
+  .page-head {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    margin-bottom: 18px;
+  }
+  .page-head h1 { margin: 0; font-size: 21px; font-weight: 800; letter-spacing: -.01em; }
+  .page-head .biz-email { color: var(--ink-dim); font-size: 13px; font-family: var(--mono); margin-top: 3px; }
+  .head-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* ---------- Stat cards ---------- */
+  .stat-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin-bottom: 24px;
+  }
+  .stat {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    padding: 16px 18px;
+    box-shadow: var(--shadow-sm);
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .stat .stat-top { display: flex; align-items: center; justify-content: space-between; }
+  .stat .lbl {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--ink-dim);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+  .stat .ic-wrap {
+    width: 28px; height: 28px; border-radius: 9px; display: flex; align-items: center; justify-content: center; flex: none;
+  }
+  .stat .ic-wrap svg { width: 15px; height: 15px; }
+  .stat.tone-green .ic-wrap { background: var(--green-bg); color: var(--green); }
+  .stat.tone-amber .ic-wrap { background: var(--amber-bg); color: var(--amber); }
+  .stat.tone-blue .ic-wrap { background: var(--blue-bg); color: var(--blue); }
+  .stat.tone-sky .ic-wrap { background: var(--brand-100); color: var(--brand-darker); }
+  .stat .val { font-size: 21px; font-weight: 800; color: var(--ink); font-family: var(--mono); line-height: 1.1; }
+  .stat .val.green { color: var(--green); }
+  .stat .val.amber { color: var(--amber); }
+  .stat .val.blue { color: var(--brand-dark); }
+  .stat .sub-note { font-size: 11.5px; color: var(--ink-faint); }
+
+  /* ---------- Charts ---------- */
+  .chart-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; margin-bottom: 22px; }
+  .chart-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+  }
+  .chart-card .chart-head {
+    display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 6px;
+    padding: 18px 22px 4px;
+  }
+  .chart-card .chart-head h2 { font-size: 14px; margin: 0; font-weight: 700; color: var(--ink); }
+  .chart-card .chart-head .hint { font-size: 12px; color: var(--ink-faint); }
+  .chart-card .chart-body { padding: 6px 18px 18px; }
+  .chart-canvas-wrap { position: relative; height: 240px; }
+  .insight-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 0 22px 20px; }
+  .insight-chip { background: var(--brand-50); border: 1px solid var(--brand-100); border-radius: var(--r-sm); padding: 12px 14px; }
+  .insight-chip .k { font-family: var(--mono); font-size: 10.5px; color: var(--ink-dim); text-transform: uppercase; letter-spacing: .05em; }
+  .insight-chip .v { font-family: var(--mono); font-weight: 700; font-size: 16px; margin-top: 4px; color: var(--ink); }
+  .legend-row { display: flex; gap: 14px; padding: 0 22px 14px; flex-wrap: wrap; }
+  .legend-row .li { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--ink-dim); }
+  .legend-row .li .sw { width: 9px; height: 9px; border-radius: 3px; }
+  @media (max-width: 980px) { .chart-grid { grid-template-columns: 1fr; } }
+
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; animation: fadein .15s ease; }
+  @keyframes fadein { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+
+  /* ---------- Panels ---------- */
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); margin-bottom: 20px; overflow: hidden; box-shadow: var(--shadow-sm); }
+  .panel-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 18px 22px; border-bottom: 1px solid var(--line-soft); }
+  .panel-head h2 { font-size: 14.5px; margin: 0; font-weight: 700; color: var(--ink); display: flex; align-items: center; gap: 8px; }
+  .panel-head .hint { font-size: 12px; color: var(--ink-faint); }
+  .panel-head .head-tools { display: flex; align-items: center; gap: 8px; }
+  .panel-body { padding: 20px 22px; }
+
+  /* ---------- Forms ---------- */
+  .inline-form { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
+  .field { display: flex; flex-direction: column; gap: 6px; min-width: 180px; flex: 1; }
+  .field label { font-size: 12px; color: var(--ink-dim); font-weight: 600; }
+  .field input, .field select {
+    width: 100%; background: var(--bg); border: 1px solid var(--line); color: var(--ink);
+    padding: 10px 12px; border-radius: var(--r-sm); font-family: var(--sans); font-size: 13.5px;
+  }
+  .field input:focus, .field select:focus { outline: none; border-color: var(--brand); background: var(--surface); box-shadow: 0 0 0 3px var(--brand-100); }
+
+  /* ---------- Tables ---------- */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; min-width: 480px; }
+  th {
+    text-align: left; font-size: 10.5px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: .06em;
+    padding: 0 22px 10px; font-weight: 700; position: sticky; top: 0; background: var(--surface);
+  }
+  td { padding: 12px 22px; font-size: 13.5px; border-top: 1px solid var(--line-soft); }
+  tr:hover td { background: var(--brand-50); }
+  .empty { color: var(--ink-faint); font-size: 13.5px; padding: 40px 22px; text-align: center; }
+
+  .status-pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px 3px 8px; border-radius: 20px; font-size: 10.5px; font-family: var(--mono); text-transform: uppercase; font-weight: 700; }
+  .status-pill::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .status-success, .status-successful, .status-active, .status-won { background: var(--green-bg); color: var(--green); }
+  .status-pending, .status-processing, .status-partial, .status-open, .status-under_review, .status-past_due { background: var(--amber-bg); color: var(--amber); }
+  .status-flagged, .status-failed, .status-lost { background: var(--red-bg); color: var(--red); }
+  .status-over { background: var(--blue-bg); color: var(--blue); }
+  .status-reversed, .status-cancelled { background: var(--line-soft); color: var(--ink-dim); }
+  .status-pending_settlement { background: var(--amber-bg); color: var(--amber); }
+  .status-settled { background: var(--blue-bg); color: var(--blue); }
+  .status-available { background: var(--green-bg); color: var(--green); }
+
+  .pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; }
+  .pagination .page-info { font-size: 13px; color: var(--ink-dim); }
+  .pagination .page-btns { display: flex; gap: 8px; }
+  .pagination button { padding: 6px 14px; font-size: 13px; }
+  .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ---------- Chips / search ---------- */
+  .chip-row { display: flex; gap: 8px; flex-wrap: wrap; padding: 16px 22px 0; }
+  .chip { font-size: 12px; font-weight: 600; color: var(--ink-dim); background: var(--bg); border: 1px solid var(--line); border-radius: 20px; padding: 5px 13px; cursor: pointer; }
+  .chip:hover { border-color: var(--brand); }
+  .chip.active { color: #fff; background: var(--ink); border-color: var(--ink); }
+  .search-row { display: flex; align-items: center; gap: 10px; padding: 14px 22px 0; flex-wrap: wrap; }
+  .search-row .search-box { position: relative; flex: 1; max-width: 360px; min-width: 200px; }
+  .search-row .search-box .ic { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--ink-faint); width: 15px; height: 15px; }
+  .search-row input {
+    width: 100%; background: var(--bg); border: 1px solid var(--line); color: var(--ink);
+    padding: 9px 12px 9px 32px; border-radius: var(--r-sm); font-size: 13px;
+  }
+  .search-row input:focus { outline: none; border-color: var(--brand); background: var(--surface); }
+
+  /* ---------- Key reveal / info blocks ---------- */
+  .key-reveal { background: var(--brand-50); border: 1px solid var(--brand-100); border-radius: var(--r-sm); padding: 16px; margin-top: 14px; }
+  .key-reveal .warn { color: var(--amber); font-size: 12px; font-weight: 700; margin-bottom: 10px; }
+  .key-row { margin-bottom: 4px; }
+  .key-row .k-label { font-size: 11px; color: var(--ink-dim); font-family: var(--mono); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+  .key-row .k-val { font-family: var(--mono); font-size: 12.5px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 9px 11px; word-break: break-all; user-select: all; }
+  .link-row { display: flex; align-items: center; gap: 8px; }
+  .link-row .k-val { flex: 1; }
+  .copy-btn { flex: none; }
+  .link-card { background: var(--brand-50); border: 1px solid var(--brand-100); border-radius: var(--r-sm); padding: 16px; margin-top: 16px; }
+
+  .info-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+  .info-item .k-label { font-size: 11px; color: var(--ink-dim); font-family: var(--mono); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
+  .k-val2 { font-family: var(--mono); font-size: 13.5px; color: var(--ink); word-break: break-all; }
+
+  .key-block { border: 1px solid var(--line); border-radius: var(--r-md); padding: 16px 18px; margin-bottom: 14px; }
+  .key-block-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+  .key-block-head .title { font-size: 13.5px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .key-block .desc { font-size: 12.5px; color: var(--ink-dim); margin: 0 0 12px; line-height: 1.5; }
+  .mode-tag { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; padding: 3px 9px; border-radius: 20px; background: var(--brand-50); color: var(--brand-darker); border: 1px solid var(--brand-100); }
+  .mode-tag.live { background: var(--green-bg); color: var(--green); border-color: #bbf0d0; }
+
+  /* ---------- Empty state note ---------- */
+  .stub-note { display: flex; gap: 12px; align-items: flex-start; background: var(--brand-50); border: 1px dashed var(--brand-100); border-radius: var(--r-sm); padding: 16px 18px; font-size: 13px; color: var(--ink-dim); line-height: 1.6; }
+  .stub-note .ic { font-size: 16px; flex: none; }
+
+  /* ---------- Toast ---------- */
+  .toast {
+    position: fixed; bottom: 20px; right: 20px; background: var(--ink); border: 1px solid var(--ink); color: #fff;
+    padding: 12px 18px; border-radius: var(--r-sm); font-size: 13.5px; opacity: 0; transform: translateY(8px);
+    transition: all .2s ease; pointer-events: none; z-index: 90; box-shadow: 0 8px 24px rgba(15,33,51,.18);
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.err { background: var(--red); border-color: var(--red); }
+
+  @media (max-width: 980px) {
+    .sidebar {
+      position: fixed; top: var(--topbar-h); left: 0; height: calc(100vh - var(--topbar-h));
+      width: 260px; transform: translateX(-100%); transition: transform .2s ease; z-index: 60;
+      box-shadow: var(--shadow-md);
+    }
+    .sidebar.open { transform: translateX(0); }
+    .menu-toggle { display: flex; }
+    .backdrop.open { display: block; position: fixed; inset: var(--topbar-h) 0 0 0; background: rgba(14,27,44,.35); z-index: 55; }
+    .user-chip .who { display: none; }
+  }
+  @media (min-width: 981px) { .crumb { display: inline; } }
+  @media (max-width: 860px) {
+    .stat-row { grid-template-columns: repeat(2, 1fr); }
+    .info-grid { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 560px) {
+    .main { padding: 18px 14px 48px; }
+    .insight-row { grid-template-columns: 1fr 1fr; }
+  }
+
+  /* ---------- Topbar search ---------- */
+  .topbar-search { flex: 1; max-width: 480px; margin: 0 16px; position: relative; display: none; }
+  .topbar-search .ic { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--ink-faint); width: 15px; height: 15px; }
+  .topbar-search input {
+    width: 100%; background: var(--bg); border: 1px solid var(--line); color: var(--ink);
+    padding: 9px 14px 9px 36px; border-radius: 10px; font-size: 13px; font-family: var(--sans);
+  }
+  .topbar-search input:focus { outline: none; border-color: var(--brand); background: var(--surface); }
+  @media (min-width: 760px) { .topbar-search { display: block; } }
+
+  /* ---------- Sidebar profile ---------- */
+  .sidebar-profile { display: flex; align-items: center; gap: 10px; padding: 6px 12px 16px; margin-bottom: 6px; border-bottom: 1px solid var(--line-soft); }
+  .sidebar-profile .who { min-width: 0; }
+  .sidebar-profile .nm { font-size: 13.5px; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sidebar-profile .mid { font-size: 11px; color: var(--ink-faint); font-family: var(--mono); }
+
+  /* ---------- Balances (Home + Balances tab) ---------- */
+  .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 4px 0 14px; }
+  .section-head h2 { font-size: 16px; margin: 0; font-weight: 800; color: var(--ink); }
+  .balance-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 26px; }
+  .balance-card {
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
+    padding: 18px; box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: 10px;
+  }
+  .balance-card.disabled { background: var(--line-soft); opacity: .72; }
+  .balance-card-top { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--ink); }
+  .balance-card-top .flag { font-size: 16px; line-height: 1; }
+  .balance-sub { font-size: 11.5px; color: var(--ink-faint); }
+  .balance-amt-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .balance-amt { font-family: var(--mono); font-size: 17px; font-weight: 700; color: var(--ink); letter-spacing: .01em; }
+  .eye-btn { background: none; border: none; padding: 4px; cursor: pointer; color: var(--ink-faint); display: flex; }
+  .eye-btn:hover { color: var(--brand-darker); }
+  .balance-unavailable { font-size: 11px; color: var(--ink-faint); margin-top: -2px; }
+  @media (max-width: 980px) { .balance-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) { .balance-grid { grid-template-columns: 1fr; } }
+</style>
+<link rel="stylesheet" href="/css/dashboard-overview.css" />
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.2.1/dist/chartjs-chart-financial.min.js"></script>
+
+</head>
+<body class="dashboard-page">
+
+<div class="topbar">
+  <div class="topbar-left">
+    <button class="menu-toggle" id="sidebarToggle" aria-label="Toggle menu" type="button">
+      <svg class="icon" viewBox="0 0 24 24"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+    </button>
+    <div class="user-chip" style="border:none; padding-left:0;">
+      <div class="avatar" id="sideAvatarInitial">—</div>
+      <div class="who">
+        <span class="nm" id="sideBizName">—</span>
+        <span class="em" id="sideMerchantId">—</span>
+      </div>
+    </div>
+  </div>
+  <div class="topbar-search">
+    <svg class="icon ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" id="topbarSearch" placeholder="Search anything" />
+  </div>
+  <div class="topbar-right">
+    <button class="notif-btn" id="notifBtn" type="button" aria-label="Notifications" title="Open disputes">
+      <svg class="icon" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      <span class="notif-badge" id="notifBadge">0</span>
+    </button>
+    <div class="user-menu" id="topUserMenu">
+      <button class="user-chip user-chip-btn" id="topUserChipBtn" type="button" aria-haspopup="true" aria-expanded="false">
+        <div class="avatar" id="topAvatarInitial">—</div>
+        <div class="who">
+          <span class="nm" id="topBizName">—</span>
+          <span class="role">Business account</span>
+        </div>
+        <svg class="icon chevron" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="user-dropdown" id="topUserDropdown">
+        <button type="button" class="user-dropdown-item" id="topLogoutBtn">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          Log out
+        </button>
+      </div>
+    </div>
+  </div>
+  <div style="display:none;">
+    <span id="bizName"></span><span id="bizEmail"></span>
+    <button id="logoutBtn"></button>
+  </div>
+</div>
+
+<div class="backdrop" id="sidebarBackdrop"></div>
+
+<div class="shell">
+
+  <aside class="sidebar" id="sidebarDrawer">
+    <div class="sidebar-group">
+      <div class="sidebar-label">Overview</div>
+      <button class="side-link active" data-tab="overview">
+        <svg class="icon ic" viewBox="0 0 24 24"><path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>
+        Dashboard
+      </button>
+    </div>
+    <div class="sidebar-group">
+      <div class="sidebar-label">Payments</div>
+      <button class="side-link" data-tab="transactions">
+        <svg class="icon ic" viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+        Transactions<span class="badge-count" id="disputeBadge" style="display:none;" title="Open disputes"></span>
+      </button>
+      <button class="side-link" data-tab="payments">
+        <svg class="icon ic" viewBox="0 0 24 24"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg>
+        Payouts
+      </button>
+      <button class="side-link" data-tab="store">
+        <svg class="icon ic" viewBox="0 0 24 24"><path d="M3 9l1.5-5h15L21 9"/><path d="M3 9h18v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><line x1="9" y1="13" x2="15" y2="13"/></svg>
+        Store
+      </button>
+    </div>
+    <div class="sidebar-group">
+      <div class="sidebar-label">Money</div>
+      <button class="side-link" data-tab="balances">
+        <svg class="icon ic" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+        Balances
+      </button>
+      <button class="side-link" data-tab="subaccounts">
+        <svg class="icon ic" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Subaccounts
+      </button>
+    </div>
+    <div class="sidebar-group">
+      <div class="sidebar-label">Business</div>
+      <button class="side-link" data-tab="customers">
+        <svg class="icon ic" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Customers
+      </button>
+      <button class="side-link" data-tab="settings">
+        <svg class="icon ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Settings
+      </button>
+    </div>
+    <div class="sidebar-foot"></div>
+  </aside>
+
+  <div class="main">
+
+    <div class="page-head">
+      <div>
+        <h1 id="pageTitle">Overview</h1>
+      </div>
+      <div class="head-actions" style="display:none;">
+        <button class="btn btn-ghost btn-sm" data-goto="payments">Send payout</button>
+        <button class="btn btn-accent btn-sm" id="quickNewLinkBtn">New payment link</button>
+      </div>
+    </div>
+
+    <!-- ============ HOME ============ -->
+    <div class="tab-panel active" id="tab-overview">
+
+      <div class="ov-top">
+        <div>
+          <div class="ov-date" id="ovDateLabel">—</div>
+          <h1 class="ov-greet">Good <span id="ovGreetPeriod">day</span>, <span id="ovGreetName">—</span> <span class="wave">👋</span></h1>
+          <p class="ov-sub">Here's what's happening with your payments <span id="ovSubRangeWord">today</span>.</p>
+        </div>
+        <div class="range-tabs" id="ovRangeTabs">
+          <button class="range-tab active" data-range="today">Today</button>
+          <button class="range-tab" data-range="7d">7 days</button>
+          <button class="range-tab" data-range="30d">30 days</button>
+          <button class="range-tab" data-range="custom">
+            <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <span class="label-full">Custom</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="ov-custom-range" id="ovCustomRange" style="display:none;">
+        <input type="date" id="ovCustomStart" />
+        <span>to</span>
+        <input type="date" id="ovCustomEnd" />
+        <button type="button" class="btn btn-sm btn-accent" id="ovCustomApply">Apply</button>
+      </div>
+
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-top">
+            <span class="stat-label">Available Balance</span>
+            <span class="stat-ic"><svg class="icon" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg></span>
+          </div>
+          <div class="stat-amt" id="statAvailable">—</div>
+          <div class="stat-trend" id="statAvailableTrend"></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-top">
+            <span class="stat-label">Pending Balance</span>
+            <span class="stat-ic"><svg class="icon" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span>
+          </div>
+          <div class="stat-amt" id="statPending">—</div>
+          <div class="stat-trend" id="statPendingTrend"></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-top">
+            <span class="stat-label">Total Collected</span>
+            <span class="stat-ic"><svg class="icon" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>
+          </div>
+          <div class="stat-amt" id="statCollected">—</div>
+          <div class="stat-trend" id="statCollectedTrend"></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-top">
+            <span class="stat-label">Total Transactions</span>
+            <span class="stat-ic"><svg class="icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
+          </div>
+          <div class="stat-amt" id="statTxCount">—</div>
+          <div class="stat-trend" id="statTxCountTrend"></div>
+        </div>
+      </div>
+
+      <div class="panel analytics-card">
+        <div class="analytics-head">
+          <h2>Payment analytics <span class="live-badge"><span class="dot"></span>Live</span></h2>
+          <div class="analytics-controls">
+            <div class="seg-toggle" id="ovMetricToggle">
+              <button class="seg active" data-metric="volume">Volume</button>
+              <button class="seg" data-metric="count">Transactions</button>
+            </div>
+            <div class="seg-toggle" id="ovSpanToggle">
+              <button class="seg" data-span="7">7D</button>
+              <button class="seg active" data-span="30">30D</button>
+              <button class="seg" data-span="90">3M</button>
+              <button class="seg" data-span="365">1Y</button>
+            </div>
+          </div>
+        </div>
+        <div class="analytics-figure">
+          <span class="big-num" id="ovBigNum">—</span>
+          <span class="big-trend" id="ovBigTrend"></span>
+        </div>
+        <div class="chart-canvas-wrap" style="height: 260px;">
+          <canvas id="ovAnalyticsChart"></canvas>
+        </div>
+        <div class="legend-row">
+          <span class="li"><span class="sw" style="background:var(--brand);"></span>Current period</span>
+          <span class="li"><span class="sw" style="background:var(--ink-faint);"></span>Previous period</span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head rtx-head">
+          <div>
+            <h2>Recent transactions <span class="hint" id="rtxTotalCount"></span></h2>
+            <span class="hint">Your most recent payment activity.</span>
+          </div>
+          <div class="rtx-tools">
+            <div class="search-box-v2">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" id="rtxSearch" placeholder="Search transactions" />
+            </div>
+            <select id="rtxStatusFilter">
+              <option value="">All statuses</option>
+              <option value="success">Successful</option>
+              <option value="pending">Pending</option>
+              <option value="failed">Failed</option>
+              <option value="refunded">Refunded</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" id="rtxExportBtn">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Export
+            </button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table id="rtxTable">
+            <thead><tr><th>Customer</th><th>Amount</th><th>Status</th><th>Payment method</th><th>Date</th><th>Reference</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="empty" id="rtxEmpty" style="display:none;">No transactions yet — generate a payment link below to get started.</div>
+        <div class="rtx-foot">
+          <span id="rtxShowingText"></span>
+          <button class="btn btn-ghost btn-sm" data-goto="transactions">View all transactions →</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Create a payment link</h2>
+          <span class="hint">Assigns a dedicated virtual account and returns a checkout link</span>
+        </div>
+        <div class="panel-body">
+          <form id="linkForm" class="inline-form">
+            <div class="field">
+              <label>Amount (₦)</label>
+              <input type="number" id="linkAmount" placeholder="5000" min="1" step="0.01" required />
+            </div>
+            <div class="field">
+              <label>Customer email</label>
+              <input type="email" id="linkEmail" placeholder="customer@email.com" required />
+            </div>
+            <div class="field">
+              <label>Customer name (optional)</label>
+              <input type="text" id="linkName" placeholder="Jane Doe" />
+            </div>
+            <button type="submit" class="btn btn-accent">Generate link</button>
+          </form>
+          <div id="linkResult"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ============ TRANSACTIONS ============ -->
+    <div class="tab-panel" id="tab-transactions">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>All transactions</h2>
+          <div class="head-tools">
+            <button class="btn btn-ghost btn-sm" id="exportTxBtn">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Export CSV
+            </button>
+          </div>
+        </div>
+        <div class="chip-row" id="txFilters">
+          <span class="chip active" data-status="">All</span>
+          <span class="chip" data-status="success">Success</span>
+          <span class="chip" data-status="pending">Pending</span>
+          <span class="chip" data-status="partial">Partial</span>
+          <span class="chip" data-status="over">Overpaid</span>
+          <span class="chip" data-status="flagged">Flagged</span>
+          <span class="chip" data-status="failed">Failed</span>
+        </div>
+        <div class="search-row">
+          <div class="search-box">
+            <svg class="icon ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" id="txSearch" placeholder="Search by reference or bank reference…" />
+          </div>
+        </div>
+        <div class="table-wrap" style="margin-top:16px;">
+          <table id="txTable">
+            <thead><tr><th>Reference</th><th>Status</th><th>Expected</th><th>Received</th><th>Date</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="empty" id="txEmpty" style="display:none;">No matching transactions.</div>
+      </div>
+    
+
+      <div class="section-head"><h2>Refunds</h2></div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Request a refund</h2>
+          <span class="hint">Only transactions with status success, partial or over are refundable</span>
+        </div>
+        <div class="panel-body">
+          <form id="refundForm" class="inline-form">
+            <div class="field">
+              <label>Transaction</label>
+              <select id="refTxSelect" required>
+                <option value="">Select a refundable transaction…</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Amount (₦)</label>
+              <input type="number" id="refAmount" placeholder="5000" min="1" step="0.01" required />
+            </div>
+            <div class="field">
+              <label>Reason (optional)</label>
+              <input type="text" id="refReason" placeholder="Customer requested" />
+            </div>
+            <div class="field">
+              <label>Bank code</label>
+              <input type="text" id="refBankCode" placeholder="058" required />
+            </div>
+            <div class="field">
+              <label>Account number</label>
+              <input type="text" id="refAccountNumber" placeholder="0123456789" required />
+            </div>
+            <div class="field">
+              <label>Account name</label>
+              <input type="text" id="refAccountName" placeholder="As registered with the bank" required />
+            </div>
+            <button type="submit" class="btn btn-accent">Submit refund</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Refund history</h2></div>
+        <div class="table-wrap">
+          <table id="refTable">
+            <thead><tr><th>Reference</th><th>Status</th><th>Amount</th><th>Reason</th><th>Date</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="empty" id="refEmpty" style="display:none;">No refunds yet.</div>
+      </div>
+
+    
+
+      <div class="section-head"><h2>Disputes</h2></div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Open disputes</h2>
+          <span class="hint">Opened by ops when a chargeback notice arrives — submit evidence before the deadline</span>
+        </div>
+        <div class="table-wrap">
+          <table id="disputeTable">
+            <thead><tr><th>Code</th><th>Status</th><th>Amount</th><th>Reason</th><th>Evidence due</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="empty" id="disputeEmpty" style="display:none;">No disputes on your account.</div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Submit evidence</h2>
+          <span class="hint">Only accepted while a dispute is open or under review</span>
+        </div>
+        <div class="panel-body">
+          <form id="evidenceForm" class="inline-form">
+            <div class="field">
+              <label>Dispute</label>
+              <select id="evDisputeSelect" required>
+                <option value="">Select a dispute…</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Description</label>
+              <input type="text" id="evDescription" placeholder="Proof of delivery, customer correspondence, etc." required />
+            </div>
+            <div class="field">
+              <label>Evidence URL (optional)</label>
+              <input type="url" id="evUrl" placeholder="https://…" />
+            </div>
+            <button type="submit" class="btn btn-accent">Submit evidence</button>
+          </form>
+        </div>
+      </div>
+
+    
+
+    </div>
+
+    <!-- ============ CUSTOMERS ============ -->
+    <div class="tab-panel" id="tab-customers">
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Add a customer</h2>
+          <span class="hint">Customers are also created automatically the first time they pay</span>
+        </div>
+        <div class="panel-body">
+          <form id="customerForm" class="inline-form">
+            <div class="field">
+              <label>Full name</label>
+              <input type="text" id="custName" placeholder="Jane Doe" required />
+            </div>
+            <div class="field">
+              <label>Email</label>
+              <input type="email" id="custEmail" placeholder="customer@email.com" required />
+            </div>
+            <div class="field">
+              <label>Phone (optional)</label>
+              <input type="text" id="custPhone" placeholder="080..." />
+            </div>
+            <button type="submit" class="btn btn-accent">Add customer</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>All customers</h2></div>
+        <div class="table-wrap">
+          <table id="custTable">
+            <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Added</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="empty" id="custEmpty" style="display:none;">No customers yet.</div>
+      </div>
+
+    </div>
+
+    <!-- ============ BALANCES ============ -->
+    <div class="tab-panel" id="tab-balances">
+
+      <div class="section-head"><h2>Balances</h2></div>
+      <div class="balance-grid">
+        <div class="balance-card">
+          <div class="balance-card-top"><span class="flag">🇳🇬</span><span>NGN balance</span></div>
+          <div class="balance-sub">Payout balance</div>
+          <div class="balance-amt-row"><span class="balance-amt" id="balDetailNGN">—</span></div>
+        </div>
+        <div class="balance-card disabled">
+          <div class="balance-card-top"><span class="flag">🇺🇸</span><span>USD balance</span></div>
+          <div class="balance-sub">Payout balance</div>
+          <div class="balance-amt-row"><span class="balance-amt">$ ******</span></div>
+          <div class="balance-unavailable">Not available on SwiftPay yet</div>
+        </div>
+        <div class="balance-card disabled">
+          <div class="balance-card-top"><span class="flag">🇬🇧</span><span>GBP balance</span></div>
+          <div class="balance-sub">Payout balance</div>
+          <div class="balance-amt-row"><span class="balance-amt">£ ******</span></div>
+          <div class="balance-unavailable">Not available on SwiftPay yet</div>
+        </div>
+        <div class="balance-card disabled">
+          <div class="balance-card-top"><span class="flag">🇪🇺</span><span>EUR balance</span></div>
+          <div class="balance-sub">Payout balance</div>
+          <div class="balance-amt-row"><span class="balance-amt">€ ******</span></div>
+          <div class="balance-unavailable">Not available on SwiftPay yet</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Summary</h2></div>
+        <div class="panel-body">
+          <div class="info-grid">
+            <div class="info-item"><div class="k-label">Volume received</div><div class="k-val2" id="ovTotalValue2">₦0.00</div></div>
+            <div class="info-item"><div class="k-label">Total paid out</div><div class="k-val2" id="ovTotalSettlements2">₦0.00</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Settlement schedule</h2>
+          <span class="hint">How a confirmed payment moves to your payout-ready balance</span>
+        </div>
+        <div class="panel-body">
+          <div class="table-wrap">
+            <table id="settleTable">
+              <thead><tr><th>Date</th><th>Reference</th><th>Amount received</th><th>Status</th><th>Settled at</th><th>Available at</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="empty" id="settleEmpty" style="display:none;">
+            Nothing here yet — this fills in once a payment succeeds and starts moving through
+            <code>pending_settlement → settled → available</code>.
+          </div>
+          <div class="pagination" id="settlePagination" style="display:none;">
+            <span class="page-info" id="settlePageInfo"></span>
+            <div class="page-btns">
+              <button class="btn" id="settlePrevBtn">Previous</button>
+              <button class="btn" id="settleNextBtn">Next</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    
+
+    </div>
+
+    <!-- ============ STORE ============ -->
+    <div class="tab-panel" id="tab-store">
+      <div class="panel">
+        <div class="panel-body" style="padding: 48px 22px; text-align: center;">
+          <div class="stub-note" style="display: inline-flex; text-align: left;">
+            <span class="ic">&#128717;</span>
+            <span>Store is coming soon — set up a storefront to sell products and services directly, without writing checkout code.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ PAYMENTS ============ -->
+    <div class="tab-panel" id="tab-payments">
+
+      <div class="section-head"><h2>Payouts</h2></div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Request a payout</h2></div>
+        <div class="panel-body">
+          <form id="payoutForm" class="inline-form">
+            <div class="field">
+              <label>Pay to</label>
+              <select id="poRecipientSelect">
+                <option value="">New destination (enter details below)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Amount (₦)</label>
+              <input type="number" id="poAmount" placeholder="10000" min="1" step="0.01" required />
+            </div>
+            <div id="poNewDestinationFields">
+              <div class="field">
+                <label>Bank code</label>
+                <input type="text" id="poBankCode" placeholder="058" required />
+              </div>
+              <div class="field">
+                <label>Account number</label>
+                <input type="text" id="poAccountNumber" placeholder="0123456789" required />
+              </div>
+              <div class="field">
+                <label>Account name</label>
+                <input type="text" id="poAccountName" placeholder="As registered with the bank" required />
+                <span class="hint" id="poResolveStatus"></span>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-accent">Send payout</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Payout history</h2></div>
+        <div class="table-wrap">
+          <table id="poTable">
+            <thead><tr><th>Reference</th><th>Status</th><th>Amount</th><th>Destination</th><th>Date</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="empty" id="poEmpty" style="display:none;">No payouts yet.</div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Recipients</h2>
+          <span class="hint">Save a destination once, verify it, then pay it repeatedly without retyping account details</span>
+        </div>
+        <div class="panel-body">
+          <form id="recipientForm" class="inline-form">
+            <div class="field">
+              <label>Label</label>
+              <input type="text" id="rcpLabel" placeholder="Jane - Payroll" required />
+            </div>
+            <div class="field">
+              <label>Bank code</label>
+              <input type="text" id="rcpBankCode" placeholder="058" required />
+            </div>
+            <div class="field">
+              <label>Account number</label>
+              <input type="text" id="rcpAccountNumber" placeholder="0123456789" required />
+            </div>
+            <div class="field">
+              <label>Account name</label>
+              <input type="text" id="rcpAccountName" placeholder="As registered with the bank" required />
+              <span class="hint" id="rcpResolveStatus"></span>
+            </div>
+            <button type="submit" class="btn btn-accent">Save recipient</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Saved recipients</h2></div>
+        <div class="table-wrap">
+          <table id="rcpTable">
+            <thead><tr><th>Label</th><th>Account</th><th>Verification</th><th>Status</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="empty" id="rcpEmpty" style="display:none;">No saved recipients yet - add one above.</div>
+      </div>
+
+    
+
+      <div class="section-head"><h2>Billing &amp; subscriptions</h2></div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Create a plan</h2>
+          <span class="hint">Customers subscribe to a plan and are billed each interval</span>
+        </div>
+        <div class="panel-body">
+          <form id="planForm" class="inline-form">
+            <div class="field">
+              <label>Plan name</label>
+              <input type="text" id="planName" placeholder="Pro monthly" required />
+            </div>
+            <div class="field">
+              <label>Amount (₦)</label>
+              <input type="number" id="planAmount" placeholder="5000" min="1" step="0.01" required />
+            </div>
+            <div class="field">
+              <label>Interval</label>
+              <select id="planInterval">
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly" selected>Monthly</option>
+                <option value="yearly">Yearly</option>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-accent">Create plan</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Plans</h2></div>
+        <div class="table-wrap">
+          <table id="planTable">
+            <thead><tr><th>Name</th><th>Amount</th><th>Interval</th><th>Status</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="empty" id="planEmpty" style="display:none;">No plans yet — create one above.</div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Subscribe a customer</h2>
+        </div>
+        <div class="panel-body">
+          <form id="subscribeForm" class="inline-form">
+            <div class="field">
+              <label>Customer</label>
+              <select id="subCustomerSelect" required>
+                <option value="">Select a customer…</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Plan</label>
+              <select id="subPlanSelect" required>
+                <option value="">Select a plan…</option>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-accent">Subscribe</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Subscriptions</h2></div>
+        <div class="table-wrap">
+          <table id="subTable">
+            <thead><tr><th>Code</th><th>Plan</th><th>Status</th><th>Next billing</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="empty" id="subEmpty" style="display:none;">No subscriptions yet.</div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Invoices</h2></div>
+        <div class="table-wrap">
+          <table id="invTable">
+            <thead><tr><th>Invoice</th><th>Status</th><th>Amount</th><th>Due</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="empty" id="invEmpty" style="display:none;">No invoices yet.</div>
+      </div>
+
+    
+
+    </div>
+
+    <!-- ============ SUBACCOUNTS ============ -->
+    <div class="tab-panel" id="tab-subaccounts">
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Add a subaccount</h2>
+          <span class="hint">Split settlement to a partner's own bank account — requires a plan that includes subaccounts</span>
+        </div>
+        <div class="panel-body">
+          <form id="subaccountForm" class="inline-form">
+            <div class="field">
+              <label>Business name</label>
+              <input type="text" id="subaccName" placeholder="Vendor name" required />
+            </div>
+            <div class="field">
+              <label>Bank code</label>
+              <input type="text" id="subaccBankCode" placeholder="058" required />
+            </div>
+            <div class="field">
+              <label>Account number</label>
+              <input type="text" id="subaccAccountNumber" placeholder="0123456789" required />
+            </div>
+            <div class="field">
+              <label>Account name</label>
+              <input type="text" id="subaccAccountName" placeholder="As registered with the bank" required />
+            </div>
+            <div class="field">
+              <label>Default split % (optional)</label>
+              <input type="number" id="subaccSplit" placeholder="20" min="0" max="100" step="0.01" />
+            </div>
+            <button type="submit" class="btn btn-accent">Add subaccount</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>All subaccounts</h2></div>
+        <div class="table-wrap">
+          <table id="subaccTable">
+            <thead><tr><th>Business name</th><th>Settlement account</th><th>Split</th><th>Added</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="empty" id="subaccEmpty" style="display:none;">No subaccounts yet.</div>
+      </div>
+
+    </div>
+
+    <!-- ============ SETTINGS ============ -->
+    <div class="tab-panel" id="tab-settings">
+
+      <div class="panel">
+        <div class="panel-head"><h2>Business</h2></div>
+        <div class="panel-body">
+          <div class="info-grid">
+            <div class="info-item">
+              <div class="k-label">Business name</div>
+              <div class="k-val2" id="setBizName">—</div>
+            </div>
+            <div class="info-item">
+              <div class="k-label">Email</div>
+              <div class="k-val2" id="setBizEmail">—</div>
+            </div>
+            <div class="info-item">
+              <div class="k-label">Test public key</div>
+              <div class="k-val2" id="setTestPubKey">—</div>
+            </div>
+            <div class="info-item">
+              <div class="k-label">Live public key</div>
+              <div class="k-val2" id="setLivePubKey">—</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>API secret keys</h2>
+          <span class="hint">Used to authenticate API requests — shown once, never retrievable after</span>
+        </div>
+        <div class="panel-body">
+
+          <div class="key-block">
+            <div class="key-block-head">
+              <div class="title"><span class="mode-tag">test</span>Test secret key</div>
+              <button class="btn btn-sm" id="regenTestKeyBtn">Regenerate</button>
+            </div>
+            <p class="desc">Safe to use for building and QA — never touches real money.</p>
+            <div id="regenTestKeyResult"></div>
+          </div>
+
+          <div class="key-block">
+            <div class="key-block-head">
+              <div class="title"><span class="mode-tag live">live</span>Live secret key</div>
+              <button class="btn btn-sm btn-danger-outline" id="regenLiveKeyBtn">Regenerate</button>
+            </div>
+            <p class="desc">Authenticates real transactions. Your live key was shown once at signup — if you didn't save it, generate a new one below. The old one stops working immediately.</p>
+            <div id="regenLiveKeyResult"></div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Webhook URL</h2>
+          <span class="hint">SwiftPay POSTs a signed transaction.success event here on every confirmed transfer</span>
+        </div>
+        <div class="panel-body">
+          <form id="webhookForm" class="inline-form">
+            <div class="field">
+              <label>https://your-store.com/swiftpay/webhook</label>
+              <input type="url" id="webhookUrlInput" placeholder="https://your-store.com/swiftpay/webhook" />
+            </div>
+            <button type="submit" class="btn btn-accent">Save</button>
+          </form>
+
+          <div class="key-block" style="margin-top:16px;">
+            <div class="key-block-head">
+              <div class="title">Webhook signing secret</div>
+              <button class="btn btn-sm btn-danger-outline" id="regenWebhookSecretBtn">Regenerate</button>
+            </div>
+            <p class="desc">Used to sign every webhook SwiftPay sends you (X-SwiftPay-Signature header) — shown once, never retrievable after. Yours was shown once at signup; if you didn't save it, generate a new one below. The old one stops verifying immediately.</p>
+            <div id="regenWebhookSecretResult"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-head"><h2>Analytics</h2></div>
+
+      <div class="chart-grid">
+        <div class="chart-card">
+          <div class="chart-head">
+            <h2>Daily volume — bar</h2>
+            <span class="hint">Received vs. paid out, last 30 days</span>
+          </div>
+          <div class="legend-row">
+            <span class="li"><span class="sw" style="background:var(--brand);"></span>Received</span>
+            <span class="li"><span class="sw" style="background:var(--violet);"></span>Paid out</span>
+          </div>
+          <div class="chart-body">
+            <div class="chart-canvas-wrap"><canvas id="anBarChart"></canvas></div>
+          </div>
+        </div>
+
+        <div class="chart-card">
+          <div class="chart-head">
+            <h2>Transaction range — candlestick</h2>
+            <span class="hint">Open / high / low / close per day (₦)</span>
+          </div>
+          <div class="chart-body">
+            <div class="chart-canvas-wrap"><canvas id="anCandleChart"></canvas></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-head">
+          <h2>Business insights</h2>
+          <span class="hint">Computed from your live transaction history</span>
+        </div>
+        <div class="insight-row" id="anInsights">
+          <div class="insight-chip"><div class="k">Avg. transaction value</div><div class="v" id="anAvgVal">—</div></div>
+          <div class="insight-chip"><div class="k">Success rate</div><div class="v" id="anSuccessRate">—</div></div>
+          <div class="insight-chip"><div class="k">Busiest day (30d)</div><div class="v" id="anBusiestDay">—</div></div>
+          <div class="insight-chip"><div class="k">Refund rate</div><div class="v" id="anRefundRate">—</div></div>
+          <div class="insight-chip"><div class="k">Open disputes</div><div class="v" id="anOpenDisputes">—</div></div>
+          <div class="insight-chip"><div class="k">Active subscriptions</div><div class="v" id="anActiveSubs">—</div></div>
+        </div>
+      </div>
+
+      <div class="stub-note" id="anEmptyNote" style="display:none; margin-top: 4px;">
+        <span class="ic">&#9432;</span>
+        <span>Not enough transaction history yet to chart trends — figures fill in automatically as payments come through.</span>
+      </div>
+
+    
+
+
+    </div>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="/js/api.js"></script>
+<script src="/js/dashboard.js"></script>
+<script src="/js/dashboard-ui.js"></script>
+
+</body>
+</html>

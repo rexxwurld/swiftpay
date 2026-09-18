@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SwiftPay — Get started</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/site.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <a href="/" class="brand"><span class="dot"></span>SwiftPay</a>
+</nav>
+
+<div class="auth-shell">
+  <div class="auth-card">
+
+    <div class="tabs">
+      <div class="tab active" data-tab="register" id="tab-register">Create account</div>
+      <div class="tab" data-tab="login" id="tab-login">Log in</div>
+    </div>
+
+    <div class="error-msg" id="err"></div>
+
+    <!-- One-time key reveal, shown after successful registration -->
+    <div id="keyReveal" style="display:none;">
+      <h2>Save these now</h2>
+      <p class="sub">Neither of these will be shown again. Store them wherever you keep other secrets.</p>
+      <div class="key-reveal">
+        <div class="warn">⚠ Not stored anywhere retrievable after this</div>
+        <div class="key-row">
+          <div class="k-label">Secret key</div>
+          <div class="k-val" id="revealSecret"></div>
+        </div>
+        <div class="key-row">
+          <div class="k-label">Webhook signing secret</div>
+          <div class="k-val" id="revealWebhookSecret"></div>
+        </div>
+      </div>
+      <button class="btn btn-primary btn-block" id="continueBtn">Continue to log in</button>
+    </div>
+
+    <!-- Register form -->
+    <form id="registerForm">
+      <h2>Create a merchant account</h2>
+      <p class="sub">Test mode. No card, no KYC required to start building.</p>
+      <div class="field">
+        <label>Business name</label>
+        <input type="text" name="businessName" required placeholder="Elite Aura" />
+      </div>
+      <div class="field">
+        <label>Email</label>
+        <input type="email" name="email" required placeholder="you@business.com" />
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" name="password" id="password" required minlength="8" placeholder="At least 8 characters" />
+      </div>
+      <div class="field">
+        <label>Confirm password</label>
+        <input type="password" id="confirmPassword" required minlength="8" placeholder="Re-enter your password" />
+      </div>
+      <div class="field-hint" id="passwordMismatch">Passwords don't match.</div>
+      <div class="field">
+        <label>Plan</label>
+        <select name="plan" id="plan" required>
+          <option value="starter">Starter — Free</option>
+          <option value="growth">Growth — $99/month</option>
+          <option value="enterprise">Enterprise — Custom</option>
+        </select>
+      </div>
+      <div class="field-check">
+        <input type="checkbox" id="agreeTerms" required />
+        <label for="agreeTerms">I agree to the Terms of Service and Privacy Policy</label>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block">Create account</button>
+      <div class="switch-tab">Already have an account? <a href="#" data-tab="login" class="switch-link">Log in</a></div>
+    </form>
+
+    <!-- Login form -->
+    <form id="loginForm" style="display:none;">
+      <h2>Log in</h2>
+      <p class="sub">Dashboard access — not your API secret key.</p>
+      <div class="field">
+        <label>Email</label>
+        <input type="email" name="email" required />
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" name="password" required />
+      </div>
+      <button type="submit" class="btn btn-primary btn-block">Log in</button>
+      <div class="switch-tab">Don't have an account? <a href="#" data-tab="register" class="switch-link">Create one</a></div>
+    </form>
+
+  </div>
+</div>
+
+<footer class="site-footer">
+  Built by Rexxwurld · SwiftPay is test-mode infrastructure, not a licensed money transmitter.
+</footer>
+
+<script src="/js/api.js"></script>
+<script src="/js/onboarding.js"></script>
+</body>
+</html>

@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Documentation | SwiftPay</title>
+  <link rel="icon" type="image/png" href="file_0000000085e0720a9dd1cf99bf9264cc.png">
+  <!-- Favicons -->
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/icons/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="assets/icons/favicon-16x16.png">
+  <!-- Apple devices -->
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/apple-touch-icon.png">
+  <!-- PWA / Android -->
+  <link rel="manifest" href="assets/icons/manifest.json">
+  <meta name="theme-color" content="#3b82f6">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <!-- Fonts / CSS -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
+<!-- jQuery CDN -->
+<style>
+  /* ===================== RESET ===================== */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', sans-serif; line-height: 1.7; color: #222; background: #f5f6fa; padding: 40px 20px; max-width:100%; overflow-x:hidden; }
+
+  h1,h2,h3 { margin-top: 30px; color:#111; }
+  p, li { font-size: 1rem; margin-top:10px; color:#333; }
+  ul { padding-left: 20px; margin-top: 10px; margin-bottom: 20px; }
+  a { color:#3b82f6; text-decoration:none; }
+  a:hover { text-decoration:underline; }
+
+  /* ===================== NAVBAR ===================== */
+  .navbar {display: flex; justify-content: space-between; align-items: center; position: fixed; width: 100%; top: 0; left:0; padding: 0 4%; height: 64px; background: rgba(255,255,255,0.8); backdrop-filter: blur(6px); box-shadow:0 2px 10px rgba(0,0,0,0.1); z-index:100;}
+  .logo {
+  font-weight: bold;
+  font-size: clamp(20px, 2vw, 28px);
+  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  color: transparent;
+}
+  .nav-links a {text-decoration:none;font-weight:500;color:#333;padding:8px 12px;transition:all 0.3s;border-radius:5px;}
+  .nav-links a:hover {background: rgba(0,0,0,0.05); text-decoration:none;}
+  .headerlogin {border:1px solid #3b82f6;}
+  .headersignup {background:#3b82f6;color:#fff;}
+  .headerlogin:hover, .headersignup:hover {opacity:0.9;}
+
+  /* Hamburger */
+  .menu-icon { display: none; cursor:pointer; flex-direction: column; gap:5px; }
+  .menu-icon span { height:3px; width:30px; background:#333; border-radius:2px; transition:0.3s;}
+  .menu-icon.active span:nth-child(1) { transform: rotate(45deg) translate(5px,6px);}
+  .menu-icon.active span:nth-child(2) {opacity:0;}
+  .menu-icon.active span:nth-child(3) {transform: rotate(-45deg) translate(5px,-6px);}
+
+  /* ===================== CONTENT ===================== */
+  .content { max-width:1000px; margin:120px auto 60px; }
+
+  .hero-card { background:#fff; padding:40px 30px; border-radius:12px; box-shadow:0 8px 20px rgba(0,0,0,0.05); text-align:center; margin-bottom:30px; }
+  .hero-card h1 { font-size:2rem; margin-top:0; margin-bottom:15px; color:#3b82f6; }
+  .hero-card p { max-width:640px; margin:0 auto 25px; color:#555; }
+  .doc-buttons { display:flex; gap:15px; justify-content:center; flex-wrap:wrap; }
+  .doc-buttons a { padding:12px 22px; border-radius:8px; font-weight:600; transition:0.3s; }
+  .btn-primary { background:#3b82f6; color:#fff; }
+  .btn-primary:hover { background:#2563eb; text-decoration:none; }
+  .btn-secondary { border:1px solid #3b82f6; color:#3b82f6; }
+  .btn-secondary:hover { background:rgba(59,130,246,0.08); text-decoration:none; }
+
+  .note-card { background:#eff6ff; border:1px solid #bfdbfe; border-radius:10px; padding:16px 20px; margin-bottom:30px; font-size:0.95rem; color:#1e3a8a; }
+  .note-card code { background:#dbeafe; padding:2px 6px; border-radius:4px; font-size:0.9rem; }
+
+  .section-card { background:#fff; padding:30px; border-radius:12px; box-shadow:0 8px 20px rgba(0,0,0,0.05); margin-bottom:25px; }
+  .section-card h2 { margin-top:0; color:#2563eb; font-size:1.35rem; }
+
+  .endpoint-grid { display:grid; grid-template-columns: repeat(auto-fit,minmax(260px,1fr)); gap:20px; margin-top:15px; }
+  .endpoint-group h3 { font-size:1rem; color:#111; margin-top:0; margin-bottom:8px; }
+  .endpoint-group p { margin-top:0; font-size:0.9rem; color:#555; }
+  .endpoint-group code { display:block; font-size:0.8rem; background:#f3f4f6; padding:2px 0; }
+
+  code, pre { font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; }
+  pre { background:#0f172a; color:#e2e8f0; padding:18px; border-radius:8px; overflow-x:auto; font-size:0.85rem; margin-top:10px; }
+
+  /* ===================== FOOTER ===================== */
+  .body8 { display:flex; flex-wrap:wrap; justify-content:space-between; background:#fff; padding:50px 10%; gap:30px;}
+  .divbottom { flex:1 1 25%; }
+  .logobottom { font-weight: bold; font-size: clamp(20px, 2vw, 28px); background: linear-gradient(90deg, #3b82f6, #60a5fa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; color: transparent; display: inline-block; }
+  .footer-socials { display:flex; gap:12px; margin-top:15px;}
+  .footer-socials img { width:30px; transition: transform 0.3s ease; }
+  .footer-socials img:hover { transform:scale(1.1);}
+  .divbottomothers { flex:1 1 15%; }
+  .divbottomothers span { font-weight:600; display:block; margin-bottom:12px; }
+  .divbottomothers a { display:block; margin-bottom:10px; font-size:0.9rem; color:#333;}
+  .divbottomothers a:hover { color:#3b82f6; }
+  .footer-bottom { text-align:center; padding:20px; font-size:0.85rem; background:#fff; color:#555; }
+
+  /* ===================== MOBILE ===================== */
+  @media(max-width:768px){
+    .menu-icon { display:flex; }
+    .nav-links { position:fixed; display:flex; flex-direction:column; width:100%; top:62px; right:-100%; opacity:0; background:#fff; padding:20px; gap:10px; transition:right 0.4s ease, opacity 0.4s ease; z-index:100;}
+    .nav-links.active { right:0; opacity:1; }
+    .nav-links a {width:100%; text-align:center; padding:15px 0; border-radius:8px; }
+    .body8 { flex-direction:column; padding:40px 5%;}
+    .divbottom,.divbottomothers { flex:1 1 100%; }
+    .footer-socials img { width:24px; }
+    .content { padding:20px 10px; margin-top:64px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- NAVBAR -->
+<nav class="navbar">
+  <div class="logo"><a href="../index.html">SwiftPay</a></div>
+  <div class="nav-links" id="navLinks">
+    <a href="products.html">Products</a>
+    <a href="pricing.html">Pricing</a>
+    <a href="developers.html">Developers</a>
+    <a href="company.html">Company</a>
+    <a href="/onboarding.html?tab=login" class="headerlogin">Login</a>
+    <a href="pricing.html" class="headersignup">Sign up</a>
+  </div>
+  <div class="menu-icon" id="menuIcon"><span></span><span></span><span></span></div>
+</nav>
+
+<!-- CONTENT -->
+<div class="content">
+
+  <div class="hero-card">
+    <h1>SwiftPay API Documentation</h1>
+    <p>SwiftPay is a Paystack-style payment infrastructure: onboard customers, assign them dedicated virtual accounts, and get verified webhook-driven wallet credits when they pay by bank transfer — plus payouts, refunds, split payments, subscriptions, and disputes.</p>
+    <div class="doc-buttons">
+      <a href="/api/docs" class="btn-primary" target="_blank" rel="noopener">Open Interactive API Explorer</a>
+    </div>
+  </div>
+
+  <div class="note-card">
+    All endpoints below live under <code>/api/v1</code> (use this for new integrations). They're also mounted unversioned at <code>/api</code> for back-compat — that alias will eventually be removed, so point new code at <code>/api/v1</code>.
+  </div>
+
+  <div class="section-card">
+    <h2>Quick start</h2>
+    <p>1. Register a merchant and save the <code>secretKey</code> from the response.</p>
+    <pre>curl -X POST /api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"businessName":"Test Store","email":"a@b.com","password":"pass1234"}'</pre>
+    <p>2. Use that key as a bearer token on every authenticated request.</p>
+    <pre>curl /api/v1/wallet \
+  -H "Authorization: Bearer sk_test_xxx"</pre>
+    <p>3. Verify payments server-to-server — never trust a browser redirect query on its own. Use <code>GET /payments/verify/{tx_ref}</code> and/or the signed <code>X-SwiftPay-Signature</code> merchant webhook before fulfilling an order.</p>
+  </div>
+
+  <div class="section-card">
+    <h2>API reference by area</h2>
+    <div class="endpoint-grid">
+
+      <div class="endpoint-group">
+        <h3>Auth</h3>
+        <p>Register, login, session, and 2FA (setup/enable/disable/verify).</p>
+      </div>
+
+      <div class="endpoint-group">
+        <h3>Merchant</h3>
+        <p>Profile, webhook URL, API key rotation.</p>
+      </div>
+
+      <div class="endpoint-group">
+        <h3>Customers</h3>
+        <p>Create and list your end-customers.</p>
+      </div>
+
+      <div class="endpoint-group">
+        <h3>Virtual Accounts</h3>
+        <p>Assign a pooled dedicated account to a customer, fetch, or deactivate one.</p>
+      </div>
+
+      <div class="endpoint-group">
+        <h3>Checkout &amp; Payments</h3>
+        <p>Hosted checkout: initialize a payment link, verify by <code>tx_ref</code>, poll the public checkout status/complete endpoints.</p>
+      </div>
+
+      <div class="endpoint-group">
+        <h3>Wallet &amp; Transactions</h3>
+        <p>Settlement balance per currency, and the full ledger of payment events.</p>
+      </div>
+
+      <div class="endpoint-group">
+        <h3>Payouts &amp; Recipients</h3>
+        <p>Send money to a bank account (single or bulk), and save reusable payout destinations.</p>
+      </div>
+
+      <div class="endpoint-group">
+        <h3>Refunds</h3>
+        <p>Fully or partially refund a settled transaction.</p>
+      </div>
+
+      <div class="endpoint-group">
+        <h3>Subaccounts</h3>
+        <p>Split-payment sub-merchants — route a percentage of an incoming payment automatically, settle their balance out on demand.</p>
+      </div>
+
+      <div class="endpoint-group">
+        <h3>Subscriptions</h3>
+        <p>Plans, subscriptions, and the recurring invoices they generate.</p>
+      </div>
+
+      <div class="endpoint-group">
+        <h3>Disputes</h3>
+        <p>Chargeback handling — view disputes, submit evidence, ops resolves them won/lost.</p>
+      </div>
+
+      <div class="endpoint-group">
+        <h3>Webhooks</h3>
+        <p>How SwiftPay signs and delivers <code>transaction.success</code> events to your registered webhook URL.</p>
+      </div>
+
+      <div class="endpoint-group">
+        <h3>Admin &amp; Settlement</h3>
+        <p>Operator-only: account pool provisioning, per-merchant fee overrides, and forcing/inspecting settlement batches.</p>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="section-card">
+    <h2>Need the full detail?</h2>
+    <p>Every request/response shape, required field, and status code lives in the <a href="/api/docs" target="_blank" rel="noopener">interactive API explorer</a>, generated straight from the OpenAPI spec — so it never drifts from what the server actually does.</p>
+  </div>
+
+</div>
+
+<!-- FOOTER -->
+<footer class="body8">
+  <div class="divbottom">
+    <span class="logobottom">SwiftPay</span><br><br>
+    <span class="font2">Transfer-based payment infrastructure for merchants.</span>
+    <div class="footer-socials">
+      <a href="#"><img src="xxlogo.jpeg" alt="X logo"></a>
+      <a href="#"><img src="githublogo.png" alt="GitHub logo"></a>
+      <a href="#"><img src="linked.png" alt="LinkedIn logo"></a>
+    </div>
+  </div>
+  <div class="divbottomothers">
+    <span>Products</span>
+    <a href="#">Payment Gateway</a>
+    <a href="#">Virtual Accounts</a>
+    <a href="#">Transfers</a>
+    <a href="#">Subscriptions</a>
+  </div>
+  <div class="divbottomothers">
+    <span>Developers</span>
+    <a href="viewdocs.html">Documentation</a>
+    <a href="/api/docs">API Reference</a>
+    <a href="#">SDKs</a>
+    <a href="#">Status</a>
+  </div>
+  <div class="divbottomothers">
+    <span>Company</span>
+    <a href="company.html">About Us</a>
+    <a href="#">Careers</a>
+    <a href="#">Blog</a>
+    <a href="#">Contact</a>
+  </div>
+  <div class="divbottomothers">
+    <span>Legal</span>
+    <a href="privacy_policy.html">Privacy Policy</a>
+    <a href="terms_of_service.html">Terms of Service</a>
+    <a href="cookie_policy.html">Cookie Policy</a>
+    <a href="security.html">Security</a>
+  </div>
+</footer>
+
+<div class="footer-bottom">
+  <span>©️ 2026 SwiftPay. All rights reserved.</span>
+</div>
+
+<!-- JS -->
+<script src="../js/site-nav.js" defer></script>
+
+<a href="../demo.html" class="swiftpay-demo-fab" aria-label="Try live demo checkout">
+  <span class="fab-ic">&#9889;</span>
+  <span class="fab-txt">Try Live Demo</span>
+</a>
+<style>
+.swiftpay-demo-fab {
+  position: fixed;
+  right: 22px;
+  bottom: 26px;
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+  color: #fff;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 14px;
+  padding: 13px 20px 13px 16px;
+  border-radius: 999px;
+  box-shadow: 0 8px 24px rgba(59,130,246,.35);
+  text-decoration: none;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.swiftpay-demo-fab:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(59,130,246,.45); color: #fff; }
+.swiftpay-demo-fab .fab-ic { font-size: 16px; }
+@media (max-width: 640px) {
+  .swiftpay-demo-fab .fab-txt { display: none; }
+  .swiftpay-demo-fab { padding: 14px; border-radius: 50%; }
+}
+</style>
+</body>
+</html>
+

@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>profileedit</title>
+  <link rel="icon" type="image/png" href="file_0000000085e0720a9dd1cf99bf9264cc.png">
+  <!-- Favicons -->
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/icons/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="assets/icons/favicon-16x16.png">
+  <!-- Apple devices -->
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/apple-touch-icon.png">
+  <!-- PWA / Android -->
+  <link rel="manifest" href="assets/icons/manifest.json">
+  <meta name="theme-color" content="#3b82f6">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <!-- Fonts / CSS -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  body {
+    font-family: 'Inter', sans-serif;
+    margin: 0;
+    background: #f7f8fc;
+    color: #222;
+  }
+  a { text-decoration: none; }
+
+  /* NAVBAR */
+  .navbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 20px;
+    height: 60px;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .logo {
+    font-weight: bold;
+    font-size: clamp(20px, 2vw, 28px);
+    background: linear-gradient(90deg, #3b82f6, #60a5fa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Hamburger */
+  .menu-icon {
+    display: none;
+    cursor: pointer;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .menu-icon span {
+    height: 3px;
+    width: 25px;
+    background: #333;
+    border-radius: 2px;
+    transition: 0.3s;
+  }
+  .menu-icon.active span:nth-child(1) { transform: rotate(45deg) translate(5px, 5px); }
+  .menu-icon.active span:nth-child(2) { opacity: 0; }
+  .menu-icon.active span:nth-child(3) { transform: rotate(-45deg) translate(5px, -5px); }
+
+  /* DASHBOARD + SIDEBAR */
+  .dashboard {
+    display: flex;
+    min-height: calc(100vh - 60px);
+  }
+  .sidebar {
+    width: 220px;
+    background: #fff;
+    padding: 20px;
+    box-shadow: 2px 0 10px rgba(0,0,0,0.05);
+    transition: transform 0.3s ease;
+  }
+  .sidebar h2 {
+    font-size: 1rem;
+    margin-bottom: 15px;
+    color: #555;
+  }
+  .sidebar a {
+    display: block;
+    padding: 10px;
+    margin-bottom: 8px;
+    border-radius: 6px;
+    color: #333;
+    text-decoration: none;
+    transition: background 0.2s, color 0.2s;
+  }
+  .sidebar a:hover {
+    background: #e3e8ff;
+    color: #3b82f6;
+  }
+
+  /* PROFILE PICTURE */
+  .profile-pic-container {
+    width: clamp(70px, 50%, 120px);
+    aspect-ratio: 1 / 1;
+    margin: 0 auto 20px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 2px solid #3b82f6;
+  }
+  .profile-pic-container img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  /* CONTENT */
+  .content {
+    flex: 1;
+    padding: 30px;
+  }
+  .content h1 { text-align: center; color: #3b82f6; margin-bottom: 25px; }
+  .content label { display:block; margin-bottom:6px; font-weight:500; }
+  .content input[type="text"],
+  .content input[type="email"],
+  .content input[type="password"] {
+    width:100%; padding:12px 15px; margin-bottom:20px; border-radius:8px; border:1px solid #ccc;
+    font-size:1rem;  /* <- restored font size */
+    color:#222;
+  }
+  .content input[type="file"] { margin-bottom: 20px; width: 100%;}
+  .content button {
+    width:100%; padding:12px; border:none; border-radius:8px; background:#3b82f6; color:#fff; font-weight:600; cursor:pointer;
+  }
+  .content button:hover { background:#2563eb; }
+
+  /* Email badge */
+  #emailBadge {
+    font-weight:600;
+    margin-left:10px;
+  }
+
+  .password-wrapper{
+  position: relative;
+  width: 100%;
+}
+
+.password-wrapper input{
+  width: 100%;
+  padding: 12px 45px 12px 15px; /* space for eye */
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  font-size: 1rem;
+}
+
+.password-wrapper span{
+  position: absolute;
+  right: 10px;
+  top: 35%;
+  transform: translateY(-50%); /* 🔥 centers it perfectly */
+  cursor: pointer;
+  font-size: 1.1rem;
+  color: #555;
+}
+  /* RESPONSIVE */
+  @media (max-width:900px){
+    .menu-icon{display:flex;}
+    .sidebar {
+      position: fixed;
+      height: 100%;
+      top: 0;
+      left: -260px;
+      z-index:200;
+    }
+    .sidebar.active { left:0; }
+    .dashboard { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+
+<!-- NAVBAR -->
+<div class="navbar">
+  <div class="logo"><a href="../index.html">SwiftPay</a></div>
+  <div class="menu-icon" id="menuIcon"><span></span><span></span><span></span></div>
+</div>
+
+<div class="dashboard">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar" id="sidebar">
+    <div class="profile-pic-container">
+      <img id="sidebarProfilePic" src="https://via.placeholder.com/100" alt="Profile Picture">
+    </div>
+    <a href="dashboard.html">Back to dashboard</a>
+    <a href="/onboarding.html?tab=login" id="logoutBtn" style="color:#ef4444;">Logout</a>
+  </div>
+
+  <!-- CONTENT -->
+  <form class="content" id="profileForm">
+
+    <h1>Edit Your Profile</h1>
+
+    <div class="profile-pic-container">
+      <img id="profilePicPreview" src="https://via.placeholder.com/100" alt="Profile Picture">
+    </div>
+
+    <label for="fullname">Full Name</label>
+    <input type="text" id="fullname" placeholder="Enter full name">
+
+    <label for="email">Email</label>
+    <input type="email" id="email" placeholder="Enter email">
+    
+
+   <label for="password">Password</label>
+
+<div class="password-wrapper">
+  <input type="password" id="password" placeholder="Enter new password" required>
+  <span id="togglePassword">👁</span>
+</div>
+
+    <label for="uploadProfile">Upload Profile Picture</label>
+    <input type="file" id="uploadProfile" accept="image/*">
+
+    <button type="button" id="saveBtn">Save Changes</button>
+  </form>
+
+</div>
+
+<!-- jQuery -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+<script>
+$(document).ready(function(){
+
+  // ===================== Hamburger toggle =====================
+  $('#menuIcon').click(function(e){
+    e.stopPropagation();
+    $('#sidebar').toggleClass('active');
+    $(this).toggleClass('active');
+  });
+
+  $(document).click(function(e){
+    if($(window).width() <= 900 && $('#sidebar').hasClass('active')){
+      if(!$(e.target).is('#menuIcon') && !$(e.target).closest('#menuIcon').length){
+        $('#sidebar').removeClass('active');
+        $('#menuIcon').removeClass('active');
+      }
+    }
+  });
+
+  $('#sidebar a').click(function(){
+    if($(window).width() <= 900){
+      $('#sidebar').removeClass('active');
+      $('#menuIcon').removeClass('active');
+    }
+  });
+
+
+  $('#togglePassword').click(function(){
+  const input = $('#password');
+
+  if(input.attr('type') === 'password'){
+    input.attr('type', 'text');
+    $(this).text('🙈');
+  } else {
+    input.attr('type', 'password');
+    $(this).text('👁');
+  }
+});
+
+
+  
+
+
+
+
+
+
+  // ===================== Load profile info =====================
+  const fullname = localStorage.getItem('fullname') || '';
+  const email = localStorage.getItem('email') || '';
+  const password = localStorage.getItem('password') || '';
+  const profilePic = localStorage.getItem('profilePic') || '';
+  const emailVerified = localStorage.getItem('emailVerified') || 'false';
+
+  if(fullname) $('#fullname').val(fullname);
+  if(email) $('#email').val(email);
+  if(password) $('#password').val(password);
+  if(profilePic){
+    $('#profilePicPreview').attr('src', profilePic);
+    $('#sidebarProfilePic').attr('src', profilePic);
+  }
+
+  
+  // ===================== Profile picture upload =====================
+  $('#uploadProfile').on('change', function(e){
+    const file = e.target.files[0];
+    if(file){
+      const reader = new FileReader();
+      reader.onload = function(event){
+        const imgData = event.target.result;
+        $('#profilePicPreview').attr('src', imgData);
+        $('#sidebarProfilePic').attr('src', imgData);
+        localStorage.setItem('profilePic', imgData);
+      }
+      reader.readAsDataURL(file);
+    }
+  });
+
+  // ===================== Save changes =====================
+  $('#saveBtn').click(function(){
+    const fullname = $('#fullname').val().trim();
+    const email = $('#email').val().trim();
+    const password = $('#password').val().trim();
+
+    if(!fullname){ alert('Full name is required!'); return; }
+    if(!email){ alert('Email is required!'); return; }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if(!emailRegex.test(email)){ alert('Please enter a valid email address!'); return; }
+    if(!password){ alert('Password is required!'); return; }
+
+    localStorage.setItem('fullname', fullname);
+    localStorage.setItem('email', email);
+    localStorage.setItem('password', password);
+    localStorage.setItem('emailVerified', 'false'); // reset verification
+
+    alert('Profile updated successfully! ✅ Please verify your email');
+
+    // Redirect to My Profile
+    window.location.href = 'myprofile.html';
+  });
+
+  // ===================== Logout =====================
+  $('#logoutBtn').click(function(){
+    localStorage.clear();
+    window.location.href = "/onboarding.html?tab=login";
+  });
+
+});
+</script>
+</body>
+</html>

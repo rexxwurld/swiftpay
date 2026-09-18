@@ -1,0 +1,1909 @@
+openapi: 3.0.3
+info:
+  title: SwiftPay API
+  description: >
+    SwiftPay - Paystack-style payment infrastructure: merchants, customers,
+    dedicated virtual accounts, wallets, transactions, payouts, refunds,
+    subaccounts, subscriptions and disputes. Served under a versioned
+    path (/api/v1); the unversioned /api alias is kept for back-compat
+    and will eventually be removed.
+
+    Payment verification rule: never treat a browser redirect query such as
+    ?status=successful as proof that a payment succeeded. The redirect is only
+    a navigation signal. A merchant must verify the payment server-to-server
+    with GET /payments/verify/{tx_ref}, and/or process the signed merchant
+    webhook configured with PATCH /merchant/webhook-url, before fulfilling an
+    order or marking it paid. Always compare the verified amountReceived with
+    the order amount before fulfillment. Keep the merchant secret key on the
+    server and never expose it in browser JavaScript.
+
+    Webhook delivery is server-to-server. The merchant webhook URL is supplied
+    by the merchant and is not a SwiftPay public API path. Merchants should
+    verify the X-SwiftPay-Signature HMAC-SHA512 signature against the exact raw
+    request body, acknowledge valid events with HTTP 2xx, and make fulfillment
+    idempotent because webhook delivery may be retried.
+
+    Test the integration in development using a test-mode checkout's
+    /checkout/{token}/simulate endpoint, which stands in for a real bank
+    transfer against a test-mode virtual account only.
+
+    The merchant dashboard (/dashboard.html) is a thin client over this same
+    API - every chart and stat it shows (including the Analytics tab's
+    revenue and transaction-range charts) is computed in the browser from
+    responses already documented here (GET /transactions, GET /payouts,
+    GET /refunds, GET /disputes, GET /subscriptions). No dashboard-only
+    endpoints exist; anything the dashboard can show, an API integration
+    can reproduce.
+  version: "2.1.0"
+servers:
+  - url: /api/v1
+    description: Current API version
+  - url: /api
+    description: Deprecated alias - use /api/v1 instead
+
+tags:
+  - name: Auth
+  - name: Merchant
+  - name: Customers
+  - name: Virtual Accounts
+  - name: Checkout
+  - name: Payments
+  - name: Wallet
+  - name: Transactions
+  - name: Payouts
+  - name: Withdrawals
+  - name: Refunds
+  - name: Subaccounts
+  - name: Recipients
+  - name: Subscriptions
+  - name: Disputes
+  - name: Settlement
+  - name: Webhooks
+  - name: Admin
+  - name: Mock Bank
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: "sk_test_... or sk_live_..."
+      description: "Merchant secret key, sent as `Authorization: Bearer sk_test_xxx`."
+    AdminKeyAuth:
+      type: apiKey
+      in: header
+      name: x-admin-key
+      description: Operator-only key. Never given to merchants.
+    AdminSessionAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: "admin session token from POST /admin/auth/login"
+      description: >
+        Named admin session, required IN ADDITION TO AdminKeyAuth for
+        money-moving admin actions (resolving stuck payouts/withdrawals/
+        refunds, releasing/rejecting flagged transactions). The session's
+        role must be finance or superadmin for those specific routes.
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        status: { type: boolean, example: false }
+        message: { type: string, example: "invalid_api_key" }
+
+    Wallet:
+      type: object
+      properties:
+        _id: { type: string }
+        merchant: { type: string }
+        balance: { type: integer, description: "Minor units (e.g. kobo)" }
+        currency: { type: string, example: NGN }
+
+    Transaction:
+      type: object
+      properties:
+        _id: { type: string }
+        reference: { type: string }
+        merchant: { type: string }
+        customer: { type: string }
+        amountReceived: { type: integer }
+        currency: { type: string }
+        status:
+          type: string
+          enum: [pending, success, partial, over, failed, flagged]
+        platformFee: { type: integer }
+        netAmount: { type: integer }
+
+    PaymentVerificationResult:
+      type: object
+      description: >
+        The actual shape returned by GET /payments/verify/{tx_ref}. This is a
+        purpose-built result, not the full Transaction document — it has no
+        _id, merchant, customer, currency, platformFee, or netAmount fields.
+      properties:
+        tx_ref: { type: string }
+        status:
+          type: string
+          enum: [pending, success, partial, over, failed, flagged]
+        amountExpected: { type: integer, nullable: true, description: "Minor units" }
+        amountReceived: { type: integer, nullable: true, description: "Minor units" }
+        accountNumber: { type: string, nullable: true }
+        mode: { type: string, nullable: true, enum: [test, live] }
+
+    Payout:
+      type: object
+      properties:
+        _id: { type: string }
+        reference: { type: string }
+        amount: { type: integer }
+        currency: { type: string }
+        mode: { type: string, enum: [test, live] }
+        idempotencyKey: { type: string, nullable: true }
+        status:
+          type: string
+          enum: [pending, reserved, processing, finalizing, successful, failed, ambiguous, reversing, reversed]
+          description: >
+            `ambiguous` means the bank's outcome for this specific payout
+            is not yet known (e.g. a network timeout after submission) -
+            it is NEVER automatically reversed just because local
+            bookkeeping failed; see `/admin/payouts/:reference/resolve`
+            for how these get manually confirmed one way or the other.
+
+    Withdrawal:
+      type: object
+      description: >
+        Same lifecycle as Payout, but always pays out to the merchant's
+        own verified settlement account (set via
+        PATCH /admin/merchants/{id}/settlement-account/verify) rather
+        than an arbitrary destination.
+      properties:
+        _id: { type: string }
+        reference: { type: string }
+        amount: { type: integer }
+        currency: { type: string }
+        mode: { type: string, enum: [test, live] }
+        idempotencyKey: { type: string, nullable: true }
+        destinationBankCode: { type: string }
+        destinationAccountNumber: { type: string }
+        destinationAccountName: { type: string }
+        status:
+          type: string
+          enum: [pending, reserved, processing, finalizing, successful, failed, ambiguous, reversing, reversed]
+
+    Refund:
+      type: object
+      properties:
+        _id: { type: string }
+        reference: { type: string }
+        transaction: { type: string }
+        amount: { type: integer }
+        currency: { type: string }
+        status:
+          type: string
+          enum: [pending, processing, successful, failed, reversed]
+
+    Subaccount:
+      type: object
+      properties:
+        _id: { type: string }
+        merchant: { type: string }
+        subaccountCode: { type: string, example: sub_xxxxx }
+        businessName: { type: string }
+        settlementBankCode: { type: string }
+        settlementAccountNumber: { type: string }
+        settlementAccountName: { type: string }
+        defaultSplitPercentage: { type: integer, nullable: true, minimum: 1, maximum: 100 }
+        active: { type: boolean }
+        balance:
+          type: array
+          description: >
+            Only present on GET /subaccounts/{id}. One entry PER (currency, mode)
+            the subaccount currently holds a positive ledger balance in - never
+            pooled into a single number, since different currencies/modes are
+            not fungible with each other.
+          items:
+            type: object
+            properties:
+              currency: { type: string, example: NGN }
+              mode: { type: string, enum: [test, live] }
+              balance: { type: integer, description: "Minor units" }
+
+    Recipient:
+      type: object
+      properties:
+        _id: { type: string }
+        merchant: { type: string }
+        recipientCode: { type: string, example: rcp_xxxxx }
+        label: { type: string }
+        bankCode: { type: string }
+        accountNumber: { type: string }
+        accountName: { type: string, description: "Provider-verified name where verified=true and verificationMethod=provider; otherwise the value supplied at creation, not yet confirmed against the bank." }
+        verified: { type: boolean, description: "Must be true before this recipient can be used for a live-mode payout." }
+        verificationMethod: { type: string, enum: [provider, admin], nullable: true }
+        verifiedAt: { type: string, format: date-time, nullable: true }
+        active: { type: boolean }
+
+    SettlementBatch:
+      type: object
+      properties:
+        _id: { type: string }
+        batchReference: { type: string }
+        phase:
+          type: string
+          enum: [settle, make_available]
+        currency: { type: string }
+        mode:
+          type: string
+          enum: [test, live]
+          description: "A batch only ever contains transactions of one mode - test and live are settled in separate cycles."
+        cutoffTime: { type: string, format: date-time }
+        status:
+          type: string
+          enum: [processing, completed, failed]
+        transactionCount: { type: integer }
+        totalAmount: { type: integer, description: "Minor units" }
+        startedAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time, nullable: true }
+        error: { type: string, nullable: true }
+
+    Plan:
+      type: object
+      properties:
+        _id: { type: string }
+        planCode: { type: string }
+        name: { type: string }
+        amount: { type: integer }
+        currency: { type: string }
+        interval:
+          type: string
+          enum: [daily, weekly, monthly, yearly]
+        intervalCount: { type: integer }
+
+    Subscription:
+      type: object
+      properties:
+        _id: { type: string }
+        subscriptionCode: { type: string }
+        plan: { type: string }
+        customer: { type: string }
+        status:
+          type: string
+          enum: [active, past_due, cancelled]
+        currentPeriodStart: { type: string, format: date-time }
+        currentPeriodEnd: { type: string, format: date-time }
+
+    Invoice:
+      type: object
+      properties:
+        _id: { type: string }
+        invoiceNumber: { type: string }
+        amount: { type: integer }
+        currency: { type: string }
+        status:
+          type: string
+          enum: [pending, paid, failed, void]
+        dueDate: { type: string, format: date-time }
+
+    Dispute:
+      type: object
+      properties:
+        _id: { type: string }
+        disputeCode: { type: string }
+        transaction: { type: string }
+        amount: { type: integer }
+        currency: { type: string }
+        reason:
+          type: string
+          enum: [fraudulent, duplicate, product_not_received, product_unacceptable, unrecognized, other]
+        status:
+          type: string
+          enum: [open, under_review, won, lost]
+        evidenceDueBy: { type: string, format: date-time }
+
+paths:
+  /payments/initialize:
+    post:
+      tags: [Payments]
+      summary: Hosted checkout — create the customer, assign a virtual account, and return a payment link
+      description: >
+        Creates a hosted checkout payment. The returned redirect URL may
+        include tx_ref and a browser status value after checkout. Browser
+        status values are not proof of payment. The merchant must verify the
+        transaction server-to-server with GET /payments/verify/{tx_ref} and/or
+        handle the signed merchant webhook before marking an order paid.
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, customer]
+              properties:
+                amount: { type: integer, description: "Minor units (kobo for NGN, e.g. 100000 = ₦1,000) - same contract as every other money-moving endpoint in this API. Previously this field was major units (naira) with an internal x100 conversion; fixed during the transfer-only audit since it was the one endpoint in the whole API that broke the minor-units contract." }
+                customer:
+                  type: object
+                  properties:
+                    email: { type: string }
+                    name: { type: string }
+                tx_ref: { type: string, description: "Optional — supply your own reference, otherwise one is generated" }
+                redirect_url: { type: string, description: "Where SwiftPay redirects the customer's browser after a successful checkout (tx_ref and status query params are appended). If omitted, the checkout's /complete endpoint renders a static success page instead of redirecting." }
+      responses:
+        "201":
+          description: Checkout link created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      tx_ref: { type: string }
+                      link: { type: string }
+                      accountNumber: { type: string }
+                      mode: { type: string, enum: [test, live] }
+
+  /payments/verify/{tx_ref}:
+    get:
+      tags: [Payments]
+      summary: Read back the transaction status for a hosted-checkout payment
+      description: >
+        Server-to-server verification endpoint. Use the merchant secret key
+        in the Authorization header. Do not use a browser query parameter
+        such as ?status=successful as payment proof. A payment may only be
+        fulfilled after this endpoint reports status=success and the merchant
+        confirms the verified amountReceived matches the expected order amount.
+        Note this endpoint returns a purpose-built result, not the full
+        Transaction object — see PaymentVerificationResult below.
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: tx_ref
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Transaction status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/PaymentVerificationResult" }
+
+  /checkout/{token}/status:
+    get:
+      tags: [Checkout]
+      summary: Public, unauthenticated poll of a hosted-checkout session's status (used by pay.html)
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Checkout session status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      accountNumber: { type: string }
+                      bankName: { type: string, nullable: true }
+                      amountExpected: { type: integer, description: "Minor units" }
+                      mode: { type: string, enum: [test, live] }
+                      paymentStatus: { type: string, enum: [pending, success, partial, over, failed, flagged] }
+                      amountReceived: { type: integer, nullable: true, description: "Minor units; null until a payment lands" }
+        "404":
+          description: checkout_not_found
+        "410":
+          description: checkout_expired (only if no payment has been recorded yet)
+
+  /checkout/{token}/complete:
+    get:
+      tags: [Checkout]
+      summary: Public, unauthenticated — verifies a hosted-checkout session is paid and either redirects the browser or renders a static confirmation
+      description: >
+        Not a JSON endpoint. If the checkout was created with a redirect_url,
+        a successful payment (status success or over) triggers a 303 redirect
+        to that URL with tx_ref and status=successful appended as query
+        params — those params are a UX signal only, never proof of payment.
+        If no redirect_url was supplied, this renders a static "Payment
+        successful" HTML page instead of redirecting anywhere.
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema: { type: string }
+      responses:
+        "303":
+          description: Redirect to the merchant's redirect_url (only when one was supplied at initialize time)
+        "200":
+          description: Static HTML success page (only when no redirect_url was supplied)
+        "404":
+          description: Checkout not found
+        "409":
+          description: Payment not yet confirmed, under review (flagged), or not successful
+        "500":
+          description: Unable to complete checkout
+
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new merchant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [businessName, email, password]
+              properties:
+                businessName: { type: string }
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "201":
+          description: Merchant created, includes secretKey
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Merchant login (dashboard session)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "200":
+          description: Session token, or a tempToken if 2FA is enabled
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: End the merchant's dashboard session
+      responses:
+        "200": { description: Logged out }
+
+  /auth/2fa/verify:
+    post:
+      tags: [Auth]
+      summary: Second step of login when 2FA is enabled — exchanges tempToken for a full session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tempToken, token]
+              properties:
+                tempToken: { type: string, description: "Short-lived token returned by /auth/login" }
+                token: { type: string, description: "6-digit TOTP code" }
+                backupCode: { type: string, description: "Alternative to token — one-time backup code" }
+      responses:
+        "200": { description: Session token }
+
+  /auth/2fa/setup:
+    post:
+      tags: [Auth]
+      summary: Begin 2FA setup — returns the TOTP secret/QR data for the authenticated merchant
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200": { description: "TOTP secret and provisioning URI; 2FA not yet enabled until confirmed via /auth/2fa/enable" }
+
+  /auth/2fa/enable:
+    post:
+      tags: [Auth]
+      summary: Confirm setup and turn 2FA on for the authenticated merchant
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string, description: "6-digit TOTP code from the authenticator app" }
+      responses:
+        "200": { description: 2FA enabled, includes backup codes }
+
+  /auth/2fa/disable:
+    post:
+      tags: [Auth]
+      summary: Turn 2FA off for the authenticated merchant
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password, token]
+              properties:
+                password: { type: string }
+                token: { type: string, description: "6-digit TOTP code, confirms the request" }
+      responses:
+        "200": { description: 2FA disabled }
+
+  /merchant/me:
+    get:
+      tags: [Merchant]
+      summary: Get the authenticated merchant's profile
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200": { description: Merchant profile }
+
+  /merchant/webhook-url:
+    patch:
+      tags: [Merchant]
+      summary: Set the URL SwiftPay should POST webhook notifications to
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200": { description: Updated }
+
+  /merchant/regenerate-key:
+    post:
+      tags: [Merchant]
+      summary: Rotate the merchant's API secret key
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200": { description: New key issued }
+
+  /customers:
+    post:
+      tags: [Customers]
+      summary: Create a customer
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "201": { description: Customer created }
+    get:
+      tags: [Customers]
+      summary: List the merchant's customers
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200": { description: Customers }
+
+  /virtual-accounts:
+    post:
+      tags: [Virtual Accounts]
+      summary: Assign a pooled virtual account to a customer
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "201": { description: Account assigned }
+
+  /virtual-accounts/{accountNumber}:
+    get:
+      tags: [Virtual Accounts]
+      summary: Fetch a virtual account
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: accountNumber
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Account }
+
+  /virtual-accounts/{accountNumber}/deactivate:
+    post:
+      tags: [Virtual Accounts]
+      summary: Deactivate a virtual account, releasing it back to the pool
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: accountNumber
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Deactivated }
+
+  /admin/auth/login:
+    post:
+      tags: [Admin]
+      summary: Named admin login (returns a role-scoped session token)
+      description: >
+        Requires the shared INFRA_ADMIN_KEY (x-admin-key header) in
+        addition to valid admin credentials - proves both "has server/ops
+        access" and "is this specific named person". The returned token
+        is required (Authorization: Bearer, in addition to x-admin-key)
+        for the money-moving admin actions below
+        (payouts/withdrawals/refunds/transactions resolve routes), which
+        also check the admin's role (finance/superadmin only). Admin
+        accounts are bootstrapped via `node scripts/create-admin-user.js`
+        - there is no self-service admin registration endpoint.
+      security: [{ AdminKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "200":
+          description: Admin session created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      token: { type: string, description: "Bearer token, 12h expiry by default" }
+                      admin:
+                        type: object
+                        properties:
+                          id: { type: string }
+                          email: { type: string }
+                          role: { type: string, enum: [superadmin, finance, support] }
+        "401":
+          description: Invalid admin key or credentials
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /admin/provision-pool:
+    get:
+      tags: [Admin]
+      summary: Provision pooled accounts from a bank partner (operator-only)
+      security: [{ AdminKeyAuth: [] }]
+      parameters:
+        - in: query
+          name: bankSlug
+          schema: { type: string, default: rexxpay-bank }
+        - in: query
+          name: count
+          schema: { type: integer, default: 20, maximum: 500 }
+      responses:
+        "200": { description: Provisioned }
+
+  /admin/pool-status:
+    get:
+      tags: [Admin]
+      summary: Check pool health across bank partners (operator-only)
+      security: [{ AdminKeyAuth: [] }]
+      responses:
+        "200": { description: Pool status by bank }
+
+  /wallet:
+    get:
+      tags: [Wallet]
+      summary: Get a wallet by currency (defaults to NGN)
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - in: query
+          name: currency
+          schema: { type: string, example: NGN }
+      responses:
+        "200":
+          description: Wallet
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Wallet" }
+
+  /wallet/all:
+    get:
+      tags: [Wallet]
+      summary: List every currency wallet the merchant holds
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200":
+          description: Wallets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Wallet" }
+
+  /transactions:
+    get:
+      tags: [Transactions]
+      summary: List transactions for the authenticated merchant
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200":
+          description: Transactions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Transaction" }
+
+  /payouts:
+    post:
+      tags: [Payouts]
+      summary: Request a payout to a bank account
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, destinationBankCode, destinationAccountNumber, destinationAccountName]
+              properties:
+                amount: { type: integer, description: "Minor units" }
+                currency: { type: string, example: NGN }
+                recipientCode: { type: string }
+                destinationBankCode: { type: string }
+                destinationAccountNumber: { type: string }
+                destinationAccountName: { type: string }
+                idempotencyKey:
+                  type: string
+                  description: >
+                    Required in live mode (optional in test mode). Also
+                    accepted as an `Idempotency-Key` header instead of a
+                    body field. Store this — it's the value that comes
+                    back as `data.idempotencyKey` on payout.* webhooks, and
+                    is what a merchant must match webhook deliveries
+                    against (see the webhook contract notes above `/webhooks/bank`).
+                    `reference` is NOT accepted as a request field; SwiftPay
+                    always assigns the payout's `reference` itself.
+                    Reusing the same key with different request fields
+                    (amount, destination, etc.) is rejected with
+                    `idempotency_key_reused_with_different_request` rather
+                    than silently returning the original payout.
+      responses:
+        "201":
+          description: Payout created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Payout" }
+        "400":
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    get:
+      tags: [Payouts]
+      summary: List payouts
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200":
+          description: Payouts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Payout" }
+
+  /payouts/bulk:
+    post:
+      tags: [Payouts]
+      summary: Request up to 100 payouts in one call
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                currency: { type: string, example: NGN }
+                items:
+                  type: array
+                  maxItems: 100
+                  items:
+                    type: object
+                    properties:
+                      amount: { type: integer }
+                      recipientCode: { type: string }
+      responses:
+        "201":
+          description: Bulk payout accepted
+
+  /withdrawals:
+    post:
+      tags: [Withdrawals]
+      summary: Withdraw to the merchant's own verified settlement account
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount]
+              properties:
+                amount: { type: integer, description: "Minor units" }
+                currency: { type: string, example: NGN }
+                idempotencyKey:
+                  type: string
+                  description: >
+                    Required in live mode (optional in test mode). Same
+                    fingerprint-binding rules as /payouts' idempotencyKey -
+                    reusing a key for a different amount, or after the
+                    merchant's settlement account changes, is rejected
+                    rather than silently returning the original withdrawal.
+      responses:
+        "201":
+          description: Withdrawal created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Withdrawal" }
+        "400":
+          description: Error (including settlement_account_not_verified - see PATCH /admin/merchants/{id}/settlement-account/verify)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    get:
+      tags: [Withdrawals]
+      summary: List withdrawals
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200":
+          description: Withdrawals
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Withdrawal" }
+
+  /withdrawals/{id}:
+    get:
+      tags: [Withdrawals]
+      summary: Get a single withdrawal
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Withdrawal
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Withdrawal" }
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /banks:
+    get:
+      tags: [Recipients]
+      summary: List supported banks (static NIBSS directory)
+      description: Reference data only, not a provider call - see config/banks.js.
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200":
+          description: Banks
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        code: { type: string, example: "058" }
+                        name: { type: string, example: "Guaranty Trust Bank (GTBank)" }
+                        active: { type: boolean }
+                        country: { type: string, example: NG }
+                        currency: { type: string, example: NGN }
+
+  /bank/accounts/resolve:
+    post:
+      tags: [Recipients]
+      summary: Resolve the account name on file for a bank account number
+      description: |
+        Looks up the provider-verified name for a bank account before you save it as a
+        Recipient or settlement account - never trust a name a customer/merchant typed
+        in by hand. **Caveat**: the exact endpoint path/response shape has not been
+        confirmed directly against RexxPay Bank's real API (see
+        bankPartner.service.js#resolveBankAccount); returns 502 rather than a
+        fabricated name when resolution isn't available, in which case save the
+        recipient anyway and use PATCH /admin/recipients/{id}/verify for manual sign-off.
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bank_code, account_number]
+              properties:
+                bank_code: { type: string, example: "058" }
+                account_number: { type: string, example: "0123456789" }
+      responses:
+        "200":
+          description: Resolved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      account_number: { type: string }
+                      account_name: { type: string }
+                      bank_code: { type: string }
+        "400":
+          description: Missing fields or unknown bank code
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "502":
+          description: Provider resolution unavailable right now
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /recipients:
+    post:
+      tags: [Recipients]
+      summary: Save a payout destination for reuse
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [label, bankCode, accountNumber, accountName]
+              properties:
+                label: { type: string, description: "Merchant's own name for this recipient, e.g. \"Jane - Payroll\"" }
+                bankCode: { type: string }
+                accountNumber: { type: string }
+                accountName: { type: string }
+      responses:
+        "201":
+          description: Recipient created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Recipient" }
+    get:
+      tags: [Recipients]
+      summary: List saved recipients
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200":
+          description: Recipients
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Recipient" }
+
+  /recipients/{id}:
+    get:
+      tags: [Recipients]
+      summary: Get a single recipient
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Recipient
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Recipient" }
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    delete:
+      tags: [Recipients]
+      summary: Deactivate a recipient
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Recipient deactivated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Recipient" }
+
+  /subaccounts:
+    post:
+      tags: [Subaccounts]
+      summary: "Create a subaccount (split-payment sub-merchant)"
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [businessName, settlementBankCode, settlementAccountNumber, settlementAccountName]
+              properties:
+                businessName: { type: string }
+                settlementBankCode: { type: string }
+                settlementAccountNumber: { type: string }
+                settlementAccountName: { type: string }
+                defaultSplitPercentage:
+                  type: integer
+                  minimum: 1
+                  maximum: 100
+                  description: "Used at checkout time when no explicit splitPercentage is given"
+      responses:
+        "201":
+          description: Subaccount created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Subaccount" }
+    get:
+      tags: [Subaccounts]
+      summary: List subaccounts
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200":
+          description: Subaccounts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Subaccount" }
+
+  /subaccounts/{id}:
+    get:
+      tags: [Subaccounts]
+      summary: Get a single subaccount, including its current settleable balance
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Subaccount, with a `balance` field (minor units) added from the ledger
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Subaccount" }
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /subaccounts/{id}/settle:
+    post:
+      tags: [Subaccounts]
+      summary: Settle a subaccount's accrued ledger balance out to its bank account
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "201":
+          description: >
+            One SubaccountSettlement created PER (currency, mode) balance
+            bucket the subaccount held (mirrors a Payout, drains the
+            subaccount's ledger balance for that bucket). `data` is an array,
+            even when the subaccount only had one bucket to settle.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data:
+                    type: array
+                    items: { type: object }
+        "400":
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /refunds:
+    post:
+      tags: [Refunds]
+      summary: Refund a transaction (fully or partially)
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [transactionId, destinationBankCode, destinationAccountNumber, destinationAccountName]
+              properties:
+                transactionId: { type: string }
+                amount: { type: integer, description: "Omit to refund the full refundable amount" }
+                reason: { type: string }
+                destinationBankCode: { type: string }
+                destinationAccountNumber: { type: string }
+                destinationAccountName: { type: string }
+                idempotencyKey:
+                  type: string
+                  description: >
+                    Required in live mode (optional in test mode). Also
+                    accepted as an `Idempotency-Key` header instead of a
+                    body field. Unlike payouts, refund.* webhooks can be
+                    matched on `data.reference` directly (SwiftPay's
+                    response to this call already returns that value) —
+                    idempotencyKey here is purely for dedup, not required
+                    for webhook matching. Reusing the same key with a
+                    different amount/destination is rejected rather than
+                    silently returning the original refund.
+      responses:
+        "201":
+          description: Refund created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Refund" }
+    get:
+      tags: [Refunds]
+      summary: List refunds
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200":
+          description: Refunds
+
+  /refunds/{id}:
+    get:
+      tags: [Refunds]
+      summary: Get a single refund
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Refund
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Refund" }
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /subscriptions/plans:
+    post:
+      tags: [Subscriptions]
+      summary: Create a billing plan
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, amount, interval]
+              properties:
+                name: { type: string }
+                amount: { type: integer }
+                currency: { type: string, example: NGN }
+                interval: { type: string, enum: [daily, weekly, monthly, yearly] }
+                intervalCount: { type: integer, default: 1 }
+      responses:
+        "201":
+          description: Plan created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Plan" }
+    get:
+      tags: [Subscriptions]
+      summary: List plans
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200":
+          description: Plans
+
+  /subscriptions:
+    post:
+      tags: [Subscriptions]
+      summary: Subscribe a customer to a plan
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [customerId, planCode]
+              properties:
+                customerId: { type: string }
+                planCode: { type: string }
+      responses:
+        "201":
+          description: Subscription created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Subscription" }
+    get:
+      tags: [Subscriptions]
+      summary: List subscriptions
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200":
+          description: Subscriptions
+
+  /subscriptions/{id}/cancel:
+    post:
+      tags: [Subscriptions]
+      summary: Cancel a subscription
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Cancelled subscription
+
+  /subscriptions/invoices:
+    get:
+      tags: [Subscriptions]
+      summary: List invoices
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - in: query
+          name: subscriptionId
+          schema: { type: string }
+      responses:
+        "200":
+          description: Invoices
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Invoice" }
+
+  /disputes:
+    get:
+      tags: [Disputes]
+      summary: List disputes for the authenticated merchant
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200":
+          description: Disputes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Dispute" }
+    post:
+      tags: [Disputes]
+      summary: "Open a dispute (ops-only - represents a chargeback notice from a bank)"
+      security: [{ AdminKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [merchantId, transactionId]
+              properties:
+                merchantId: { type: string }
+                transactionId: { type: string }
+                amount: { type: integer }
+                reason:
+                  type: string
+                  enum: [fraudulent, duplicate, product_not_received, product_unacceptable, unrecognized, other]
+                reasonDetail: { type: string }
+      responses:
+        "201":
+          description: Dispute opened
+
+  /disputes/{id}:
+    get:
+      tags: [Disputes]
+      summary: Get a single dispute (merchant-visible, own disputes only)
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Dispute
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Dispute" }
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /disputes/{id}/evidence:
+    post:
+      tags: [Disputes]
+      summary: Submit evidence on an open dispute
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [description]
+              properties:
+                description: { type: string }
+                url: { type: string }
+      responses:
+        "200":
+          description: Evidence recorded
+
+  /disputes/{id}/resolve:
+    post:
+      tags: [Disputes]
+      summary: Resolve a dispute (ops-only)
+      security: [{ AdminKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outcome]
+              properties:
+                outcome: { type: string, enum: [won, lost] }
+                resolution: { type: string }
+      responses:
+        "200":
+          description: Dispute resolved
+
+  /admin/webhook-events:
+    get:
+      tags: [Admin]
+      summary: "Browse inbound webhook events (ops-only)"
+      description: "status=failed is effectively the dead-letter queue - see MAX_ATTEMPTS in webhook.processor.js."
+      security: [{ AdminKeyAuth: [] }]
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string, enum: [queued, processing, processed, failed] }
+        - in: query
+          name: source
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50, maximum: 200 }
+      responses:
+        "200":
+          description: Webhook events
+
+  /admin/webhook-events/{id}/redrive:
+    post:
+      tags: [Admin]
+      summary: "Manually retry a dead-lettered webhook event (finance/superadmin-only)"
+      description: >
+        Distinct from the automatic redriveStuckEvents() job that recovers events
+        crashed mid-processing - this is for an event that permanently exhausted
+        MAX_ATTEMPTS and needs a human decision to try again (e.g. after a
+        downstream bug is fixed).
+      security: [{ AdminKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Event requeued
+        "400":
+          description: Event not found, or not in the failed state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /admin/audit-logs:
+    get:
+      tags: [Admin]
+      summary: "Browse the audit log (ops-only)"
+      security: [{ AdminKeyAuth: [] }]
+      parameters:
+        - in: query
+          name: actorType
+          schema: { type: string, enum: [merchant, system, bank_partner, admin] }
+        - in: query
+          name: action
+          schema: { type: string }
+        - in: query
+          name: entityType
+          schema: { type: string }
+        - in: query
+          name: entityRef
+          schema: { type: string }
+        - in: query
+          name: severity
+          schema: { type: string, enum: [info, warning, critical] }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50, maximum: 200 }
+        - in: query
+          name: before
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: Audit log entries
+
+  /admin/merchants:
+    get:
+      tags: [Admin]
+      summary: "Browse merchants (ops-only)"
+      description: "Excludes secret-key hashes and passwordHash, same exclusion a merchant's own profile view uses."
+      security: [{ AdminKeyAuth: [] }]
+      parameters:
+        - in: query
+          name: isVerified
+          schema: { type: boolean }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50, maximum: 200 }
+      responses:
+        "200":
+          description: Merchants
+
+  /admin/recipients/{id}/verify:
+    patch:
+      tags: [Recipients]
+      summary: "Manually verify a payout recipient (finance/superadmin-only)"
+      description: >
+        Fallback for when automated provider resolution wasn't available at
+        recipient-creation time (POST /recipients) - see the Recipient schema's
+        `verified`/`verificationMethod` fields. Required before a recipient can be
+        used for a live-mode payout.
+      security: [{ AdminKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Recipient verified
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  message: { type: string }
+                  data: { $ref: "#/components/schemas/Recipient" }
+        "404":
+          description: Recipient not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /admin/merchants/{id}/fees:
+    patch:
+      tags: [Merchant]
+      summary: "Set a per-merchant platform fee override (ops-only)"
+      security: [{ AdminKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                percentageBps: { type: integer, description: "Basis points, e.g. 150 = 1.5%" }
+                fixedMinor: { type: integer }
+                capMinor: { type: integer }
+      responses:
+        "200":
+          description: Updated merchant fee config
+
+  /admin/settlement/run:
+    post:
+      tags: [Settlement]
+      summary: "Force a settlement cycle now (ops-only)"
+      description: >
+        Moves eligible transactions pending_settlement → settled → available
+        and writes a SettlementBatch record per phase run. The real trigger
+        is the scheduled job (`npm run run-settlement`); this exists so an
+        operator can force a cycle out-of-band (e.g. after downtime).
+      security: [{ AdminKeyAuth: [] }]
+      parameters:
+        - in: query
+          name: currency
+          schema: { type: string, default: NGN }
+        - in: query
+          name: mode
+          schema: { type: string, enum: [test, live], default: live }
+          description: "A cycle only ever settles one mode at a time - the cron job runs both."
+      responses:
+        "200":
+          description: Cycle result summary
+        "500":
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /admin/settlement/batches:
+    get:
+      tags: [Settlement]
+      summary: "List recent settlement batches (ops-only)"
+      security: [{ AdminKeyAuth: [] }]
+      parameters:
+        - in: query
+          name: currency
+          schema: { type: string }
+        - in: query
+          name: mode
+          schema: { type: string, enum: [test, live] }
+        - in: query
+          name: phase
+          schema: { type: string, enum: [settle, make_available] }
+        - in: query
+          name: limit
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Settlement batches
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/SettlementBatch" }
+        "500":
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /admin/stuck-payments:
+    get:
+      tags: [Admin]
+      summary: List any payout/withdrawal/refund sitting in reserved/processing/ambiguous
+      security: [{ AdminKeyAuth: [] }]
+      responses:
+        "200": { description: Stuck payments }
+
+  /admin/payouts/{reference}/resolve:
+    post:
+      tags: [Admin]
+      summary: Manually confirm a stuck payout's real outcome
+      description: >
+        Use only after checking with RexxPay Bank directly (dashboard,
+        support line, etc.) what actually happened - this call trusts
+        the caller completely and has no independent verification of its
+        own. Requires a named admin session with role finance or
+        superadmin, in addition to the shared admin key.
+      security: [{ AdminKeyAuth: [], AdminSessionAuth: [] }]
+      parameters:
+        - name: reference
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [success]
+              properties:
+                success: { type: boolean }
+                providerRef: { type: string }
+                failureReason: { type: string }
+      responses:
+        "200":
+          description: Resolved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Payout" }
+        "400":
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /admin/withdrawals/{reference}/resolve:
+    post:
+      tags: [Admin]
+      summary: Manually confirm a stuck withdrawal's real outcome
+      description: Same contract as /admin/payouts/{reference}/resolve.
+      security: [{ AdminKeyAuth: [], AdminSessionAuth: [] }]
+      parameters:
+        - name: reference
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [success]
+              properties:
+                success: { type: boolean }
+                providerRef: { type: string }
+                failureReason: { type: string }
+      responses:
+        "200":
+          description: Resolved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Withdrawal" }
+        "400":
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /admin/refunds/{reference}/resolve:
+    post:
+      tags: [Admin]
+      summary: Manually confirm a stuck refund's real outcome
+      description: Same contract as /admin/payouts/{reference}/resolve.
+      security: [{ AdminKeyAuth: [], AdminSessionAuth: [] }]
+      parameters:
+        - name: reference
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [success]
+              properties:
+                success: { type: boolean }
+                providerRef: { type: string }
+                failureReason: { type: string }
+      responses:
+        "200":
+          description: Resolved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Refund" }
+        "400":
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /admin/transactions/{reference}/resolve:
+    post:
+      tags: [Admin]
+      summary: Release or reject an inbound transaction flagged by risk/velocity/sanctions checks
+      description: >
+        Release performs the same wallet + ledger accounting a legitimate
+        inbound payment would. Reject changes the transaction to failed
+        without ever crediting the merchant. Requires a named admin
+        session with role finance or superadmin, in addition to the
+        shared admin key.
+      security: [{ AdminKeyAuth: [], AdminSessionAuth: [] }]
+      parameters:
+        - name: reference
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [release, reject] }
+      responses:
+        "200": { description: Resolved }
+        "400":
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+
+  # The URL is owned by the merchant and registered with PATCH /merchant/webhook-url.
+  # SwiftPay POSTs an envelope shaped like:
+  # {
+  #   "event": "transaction.success",
+  #   "data": {
+  #     "tx_ref": "merchant-reference",
+  #     "status": "success",
+  #     "amountReceived": 6800000,
+  #     "currency": "NGN"
+  #   },
+  #   "sentAt": "2026-08-12T00:00:00.000Z"
+  # }
+  # Security: X-SwiftPay-Signature = HMAC-SHA512(raw_request_body, webhook_secret).
+  # Verify the signature against the exact raw request body before processing.
+  # Fulfillment must be idempotent; duplicate webhook deliveries must not
+  # double-charge, double-credit, decrement stock twice, or increment coupons twice.
+  # Acknowledge valid events with HTTP 2xx. Never expose API or webhook secrets
+  # to browser/client-side code.
+  #
+  # Event catalogue — `event` is one of:
+  #
+  #   transaction.success   data = { tx_ref, status, amountReceived, currency }
+  #     `tx_ref` is the merchant's own reference, exactly as sent to
+  #     POST /transactions/initialize — SwiftPay never rewrites it.
+  #     Match against it directly.
+  #
+  #   refund.succeeded / refund.failed   data = Refund object (reference,
+  #     amount, currency, status, failureReason, destinationBankCode, ...)
+  #     `data.reference` is safe to match against: it's the value SwiftPay
+  #     itself generated and already handed back in the POST /refunds
+  #     response body, so a merchant that stored that response's
+  #     `reference` has the same value here.
+  #
+  #   payout.successful / payout.failed / payout.ambiguous   data = Payout
+  #     object (reference, idempotencyKey, amount, currency, status,
+  #     failureReason, destinationBankCode, ...)
+  #     ⚠ `data.reference` here is SwiftPay's OWN generated ID
+  #     (`po_...`) — it is NOT the value the merchant sent as `reference`
+  #     on POST /payouts (that field is currently accepted but ignored).
+  #     Match on `data.idempotencyKey` instead — that's the only field
+  #     that round-trips the merchant's own identifier. A merchant that
+  #     matches payout webhooks on `data.reference` will never find a
+  #     row and every payout webhook will silently no-op.
+  #
+  #   invoice.created / invoice.paid / invoice.overdue   data = Invoice
+  #     object (invoiceNumber, subscription, amount, currency, status,
+  #     dueDate, paidAt, ...). Fired by the subscription-billing sweep
+  #     (invoice.created, invoice.overdue) and by the same transaction-
+  #     matching pipeline as transaction.success (invoice.paid, once the
+  #     customer's transfer into the invoice's virtual account lands).
+
+  /webhooks/bank:
+    post:
+      tags: [Webhooks]
+      summary: Bank partner inbound-payment notification (not merchant-callable, HMAC-signature required)
+      responses:
+        "200":
+          description: Accepted for async processing
