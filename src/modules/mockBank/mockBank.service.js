@@ -73,6 +73,7 @@ async function simulateBankTransfer({ accountNumber, amount, merchantId }) {
 
   const event = await WebhookEvent.create({
     source: 'mock_bank_partner',
+    providerEventId: bankReference,
     rawBody,
     signature,
     status: 'queued',
@@ -85,7 +86,7 @@ async function simulateBankTransfer({ accountNumber, amount, merchantId }) {
 
   const [processedEvent, transaction] = await Promise.all([
     WebhookEvent.findById(event._id),
-    Transaction.findOne({ reference: bankReference }),
+    Transaction.findOne({ bankReference }),
   ]);
 
   return { event: processedEvent, transaction, bankReference };
