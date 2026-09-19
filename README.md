@@ -766,6 +766,54 @@ fields for documents that predate this session, and every frontend
 field reference (`res.data.account_name`, `r.verificationMethod`, etc.)
 matches its backend response shape exactly.
 
+### Stage 14: bugs found by an actual `npm test` run (first real execution this whole session)
+
+The user ran `npm test` for real for the first time. Two genuine,
+pre-existing bugs surfaced (both predate this audit - one in transaction
+commit/abort logic that predates this session entirely, one in a test
+file this session's own `withdrawalAmbiguousOutcome.test.js` had copied
+the broken pattern of from an existing file):
+
+1. **`MongoTransactionError: Cannot call abortTransaction after calling
+   commitTransaction`**, in the concurrent-idempotency-key race tests for
+   payout, withdrawal, and refund. Root cause: when two concurrent
+   requests race on the same idempotency key, MongoDB sometimes detects
+   the unique-index conflict *at commit time* rather than at the write -
+   so `commitTransaction()` itself throws. Every one of the 8
+   session/transaction blocks across `payout.service.js`,
+   `withdrawal.service.js`, and `refund.service.js` unconditionally
+   called `abortTransaction()` in their catch block regardless of why the
+   error occurred - but the MongoDB driver refuses to abort a session
+   once commit was attempted, so that call itself threw a *second*, new
+   error ("Cannot call abortTransaction after calling commitTransaction")
+   that masked the real one and broke the E11000 idempotency-conflict
+   recovery path entirely (the actual point of the test). Fixed by adding
+   a `committed` flag, set immediately before each `commitTransaction()`
+   call, that guards every corresponding `abortTransaction()` call.
+2. **`jest.mock()` scoping violation** in `payoutAmbiguousOutcome.test.js`
+   (pre-existing) and this session's own `withdrawalAmbiguousOutcome.test.js`
+   (which had mirrored the exact same pattern): Jest hoists `jest.mock()`
+   factories above regular variable declarations and refuses to let them
+   close over an out-of-scope variable unless its name is prefixed with
+   `mock`. Both files used `finalizeReservedDebitShouldThrow`/
+   `finalizeReservedDebitCallCount`, which don't qualify. Renamed both to
+   `mockFinalizeReservedDebit*` in both files.
+3. **"Client must be connected before running operations" console noise**
+   during the same run, from `refund.service.js`'s rare ambiguous-
+   outcome save-failure audit-log path - very likely a downstream
+   symptom of #1 (the abort-after-commit crash throwing execution into
+   an unexpected error path that isn't normally reached in that test's
+   flow), not confirmed independently resolved without a fresh run.
+
+**Important caveat about this test run itself**: it was against a
+separate local copy (`C:\Users\emman\swiftpay`), not the audited code -
+the suite count (12) matches the pre-audit test count exactly, none of
+the ~11 test files added this session appeared in the run. The bugs
+above are real and now fixed in this codebase regardless, since they're
+in shared logic this session built on top of without rewriting, but the
+~11 new test files from this session have still never actually been
+executed anywhere.
+
 ## Automated tests
 
 ```
