@@ -12,16 +12,16 @@ const { startTestDb, stopTestDb, clearTestDb } = require('./setup');
 
 jest.setTimeout(30000);
 
-let finalizeReservedDebitCallCount = 0;
-let finalizeReservedDebitShouldThrow = false;
+let mockFinalizeReservedDebitCallCount = 0;
+let mockFinalizeReservedDebitShouldThrow = false;
 
 jest.mock('../../src/modules/wallet/wallet.service', () => {
   const actual = jest.requireActual('../../src/modules/wallet/wallet.service');
   return {
     ...actual,
     finalizeReservedDebit: async (...args) => {
-      finalizeReservedDebitCallCount += 1;
-      if (finalizeReservedDebitShouldThrow && finalizeReservedDebitCallCount === 1) {
+      mockFinalizeReservedDebitCallCount += 1;
+      if (mockFinalizeReservedDebitShouldThrow && mockFinalizeReservedDebitCallCount === 1) {
         throw new Error('simulated_local_db_failure_after_bank_accepted');
       }
       return actual.finalizeReservedDebit(...args);
@@ -48,8 +48,8 @@ afterAll(async () => {
 
 afterEach(async () => {
   await clearTestDb();
-  finalizeReservedDebitCallCount = 0;
-  finalizeReservedDebitShouldThrow = false;
+  mockFinalizeReservedDebitCallCount = 0;
+  mockFinalizeReservedDebitShouldThrow = false;
 });
 
 async function makeMerchantWithVerifiedSettlementAccount() {
@@ -104,7 +104,7 @@ describe('withdrawal ambiguous-outcome handling', () => {
     const merchant = await makeMerchantWithVerifiedSettlementAccount();
     await fundWallet(merchant._id, 500_000);
 
-    finalizeReservedDebitShouldThrow = true;
+    mockFinalizeReservedDebitShouldThrow = true;
 
     const withdrawal = await requestWithdrawal({
       merchantId: merchant._id,
@@ -126,7 +126,7 @@ describe('withdrawal ambiguous-outcome handling', () => {
     const merchant = await makeMerchantWithVerifiedSettlementAccount();
     await fundWallet(merchant._id, 500_000);
 
-    finalizeReservedDebitShouldThrow = false;
+    mockFinalizeReservedDebitShouldThrow = false;
 
     const withdrawal = await requestWithdrawal({
       merchantId: merchant._id,
@@ -147,7 +147,7 @@ describe('withdrawal ambiguous-outcome handling', () => {
     const merchant = await makeMerchantWithVerifiedSettlementAccount();
     await fundWallet(merchant._id, 500_000);
 
-    finalizeReservedDebitShouldThrow = true;
+    mockFinalizeReservedDebitShouldThrow = true;
 
     const withdrawal = await requestWithdrawal({
       merchantId: merchant._id,
@@ -158,7 +158,7 @@ describe('withdrawal ambiguous-outcome handling', () => {
     });
     expect(withdrawal.status).toBe('ambiguous');
 
-    finalizeReservedDebitShouldThrow = false;
+    mockFinalizeReservedDebitShouldThrow = false;
     const finalized = await finalizeWithdrawalSuccess(withdrawal._id, 'confirmed_provider_ref');
 
     expect(finalized.status).toBe('successful');

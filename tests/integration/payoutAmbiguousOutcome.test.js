@@ -21,16 +21,16 @@ jest.setTimeout(30000);
 // Partial mock: keep reserveFundsWithLedgerEntry/releaseReservedFunds/
 // getOrCreateWallet real (delegate to the actual module), but make
 // finalizeReservedDebit throw on its first invocation only.
-let finalizeReservedDebitCallCount = 0;
-let finalizeReservedDebitShouldThrow = false;
+let mockFinalizeReservedDebitCallCount = 0;
+let mockFinalizeReservedDebitShouldThrow = false;
 
 jest.mock('../../src/modules/wallet/wallet.service', () => {
   const actual = jest.requireActual('../../src/modules/wallet/wallet.service');
   return {
     ...actual,
     finalizeReservedDebit: async (...args) => {
-      finalizeReservedDebitCallCount += 1;
-      if (finalizeReservedDebitShouldThrow && finalizeReservedDebitCallCount === 1) {
+      mockFinalizeReservedDebitCallCount += 1;
+      if (mockFinalizeReservedDebitShouldThrow && mockFinalizeReservedDebitCallCount === 1) {
         throw new Error('simulated_local_db_failure_after_bank_accepted');
       }
       return actual.finalizeReservedDebit(...args);
@@ -59,8 +59,8 @@ afterAll(async () => {
 
 afterEach(async () => {
   await clearTestDb();
-  finalizeReservedDebitCallCount = 0;
-  finalizeReservedDebitShouldThrow = false;
+  mockFinalizeReservedDebitCallCount = 0;
+  mockFinalizeReservedDebitShouldThrow = false;
 });
 
 async function makeMerchant() {
@@ -109,7 +109,7 @@ describe('payout ambiguous-outcome handling', () => {
     const merchant = await makeMerchant();
     await fundWallet(merchant._id, 500_000);
 
-    finalizeReservedDebitShouldThrow = true;
+    mockFinalizeReservedDebitShouldThrow = true;
 
     const payout = await requestPayout({
       merchantId: merchant._id,
@@ -139,7 +139,7 @@ describe('payout ambiguous-outcome handling', () => {
     const merchant = await makeMerchant();
     await fundWallet(merchant._id, 500_000);
 
-    finalizeReservedDebitShouldThrow = false;
+    mockFinalizeReservedDebitShouldThrow = false;
 
     const payout = await requestPayout({
       merchantId: merchant._id,
@@ -163,7 +163,7 @@ describe('payout ambiguous-outcome handling', () => {
     const merchant = await makeMerchant();
     await fundWallet(merchant._id, 500_000);
 
-    finalizeReservedDebitShouldThrow = true;
+    mockFinalizeReservedDebitShouldThrow = true;
 
     const payout = await requestPayout({
       merchantId: merchant._id,
@@ -180,7 +180,7 @@ describe('payout ambiguous-outcome handling', () => {
     // Now simulate an operator (or reconcile-outbound.js) confirming with
     // the bank that the payout really did succeed, and retrying
     // finalization - this time without the injected failure.
-    finalizeReservedDebitShouldThrow = false;
+    mockFinalizeReservedDebitShouldThrow = false;
     const { finalizePayoutSuccess } = require('../../src/modules/payout/payout.service');
     const finalized = await finalizePayoutSuccess(payout._id, 'confirmed_provider_ref');
 

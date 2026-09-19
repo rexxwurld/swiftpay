@@ -55,6 +55,7 @@ async function requestWithdrawal({ merchantId, amount, currency = 'NGN', idempot
   const reference = `wd_${crypto.randomBytes(12).toString('hex')}`;
   const session = await mongoose.startSession();
   let withdrawal;
+  let committed = false;
 
   try {
     session.startTransaction();
@@ -97,10 +98,19 @@ async function requestWithdrawal({ merchantId, amount, currency = 'NGN', idempot
     }], { session, ordered: true });
     withdrawal = created;
 
+    committed = true;
     await session.commitTransaction();
     session.endSession();
   } catch (err) {
-    await session.abortTransaction(); session.endSession();
+    // See payout.service.js's identical fix: once commitTransaction() has
+    // been attempted, the driver's session no longer allows
+    // abortTransaction() - calling it anyway throws a new error that
+    // masks the real one (here, the E11000 idempotency race below) and
+    // breaks its recovery path entirely.
+    if (!committed) {
+      await session.abortTransaction();
+    }
+    session.endSession();
     if (err.code === 11000 && idempotencyKey) {
       const raced = await Withdrawal.findOne({ merchant: merchantId, idempotencyKey, mode });
       if (raced) {
@@ -172,6 +182,7 @@ async function finalizeWithdrawalSuccess(withdrawalId, providerReference = null)
   if (!withdrawal) return null;
 
   const session = await mongoose.startSession();
+  let committed = false;
   try {
     session.startTransaction();
     const wallet = await getOrCreateWallet(withdrawal.merchant, withdrawal.currency, withdrawal.mode, session);
@@ -180,9 +191,11 @@ async function finalizeWithdrawalSuccess(withdrawalId, providerReference = null)
     if (providerReference) withdrawal.providerRef = providerReference;
     withdrawal.completedAt = new Date();
     await withdrawal.save({ session });
+    committed = true;
     await session.commitTransaction(); session.endSession();
   } catch (err) {
-    await session.abortTransaction(); session.endSession();
+    if (!committed) await session.abortTransaction();
+    session.endSession();
     await Withdrawal.updateOne({ _id: withdrawal._id, status: 'finalizing' }, { $set: { status: 'processing', failureReason: `finalization_failed: ${err.message}` } });
     // IMPORTANT: the bank already told us this withdrawal succeeded - a
     // local DB hiccup while recording that must NEVER be treated the same
@@ -206,6 +219,7 @@ async function reverseWithdrawal(withdrawalId, reason) {
   if (!withdrawal) return null;
 
   const session = await mongoose.startSession();
+  let committed = false;
   try {
     session.startTransaction();
     const wallet = await getOrCreateWallet(withdrawal.merchant, withdrawal.currency, withdrawal.mode, session);
@@ -219,9 +233,11 @@ async function reverseWithdrawal(withdrawalId, reason) {
     });
     withdrawal.status = 'failed'; withdrawal.completedAt = new Date();
     await withdrawal.save({ session });
+    committed = true;
     await session.commitTransaction(); session.endSession();
   } catch (err) {
-    await session.abortTransaction(); session.endSession();
+    if (!committed) await session.abortTransaction();
+    session.endSession();
     await Withdrawal.updateOne({ _id: withdrawal._id, status: 'reversing' }, { $set: { failureReason: `reversal_failed: ${err.message}` } });
     throw err;
   }

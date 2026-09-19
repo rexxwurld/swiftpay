@@ -145,6 +145,7 @@ async function requestPayout({
 
   const session = await mongoose.startSession();
   let payout;
+  let committed = false;
   try {
     session.startTransaction();
 
@@ -197,10 +198,21 @@ async function requestPayout({
     );
     payout = created;
 
+    committed = true;
     await session.commitTransaction();
     session.endSession();
   } catch (err) {
-    await session.abortTransaction();
+    // If commitTransaction() itself is what threw (the concurrent-
+    // duplicate-idempotency-key race below), MongoDB has already
+    // aborted the transaction server-side, and the driver's session
+    // state machine refuses a client-side abortTransaction() after a
+    // commit was attempted - calling it anyway throws a NEW error
+    // ("Cannot call abortTransaction after calling commitTransaction")
+    // that masks the real one and breaks the E11000 recovery below.
+    // Only abort if we know we never reached the commit attempt.
+    if (!committed) {
+      await session.abortTransaction();
+    }
     session.endSession();
 
     if (err.code === 11000 && idempotencyKey) {
@@ -323,6 +335,7 @@ async function finalizePayoutSuccess(payoutId, providerReference = null) {
   if (!payout) return null;
 
   const session = await mongoose.startSession();
+  let committed = false;
   try {
     session.startTransaction();
 
@@ -340,10 +353,13 @@ async function finalizePayoutSuccess(payoutId, providerReference = null) {
     payout.completedAt = new Date();
     await payout.save({ session });
 
+    committed = true;
     await session.commitTransaction();
     session.endSession();
   } catch (err) {
-    await session.abortTransaction();
+    if (!committed) {
+      await session.abortTransaction();
+    }
     session.endSession();
     await Payout.updateOne(
       { _id: payout._id, status: 'finalizing' },
@@ -384,6 +400,7 @@ async function reversePayout(payoutId, reason) {
   if (!payout) return null;
 
   const session = await mongoose.startSession();
+  let committed = false;
   try {
     session.startTransaction();
 
@@ -412,10 +429,13 @@ async function reversePayout(payoutId, reason) {
     payout.completedAt = new Date();
     await payout.save({ session });
 
+    committed = true;
     await session.commitTransaction();
     session.endSession();
   } catch (err) {
-    await session.abortTransaction();
+    if (!committed) {
+      await session.abortTransaction();
+    }
     session.endSession();
     await Payout.updateOne(
       { _id: payout._id, status: 'reversing' },

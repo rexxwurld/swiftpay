@@ -99,6 +99,7 @@ async function requestRefund({
 
   const session = await mongoose.startSession();
   let refund;
+  let committed = false;
   try {
     session.startTransaction();
 
@@ -163,16 +164,23 @@ async function requestRefund({
       session,
     });
 
+    committed = true;
     await session.commitTransaction();
     session.endSession();
   } catch (err) {
-    await session.abortTransaction();
+    if (!committed) {
+      await session.abortTransaction();
+    }
     session.endSession();
 
     // Same race payout.service.js guards against: two concurrent
     // requests both passed the pre-check above (neither had committed
     // yet), so the DB's unique index is what actually decides - the
-    // loser gets a duplicate-key error here, not a second refund.
+    // loser gets a duplicate-key error here, not a second refund. And
+    // if commitTransaction() itself is what threw (the actual failure
+    // mode in that race - MongoDB detects the conflict at commit, not
+    // at the write), the driver won't allow abortTransaction() after -
+    // calling it anyway used to mask this exact error with a new one.
     if (err.code === 11000 && idempotencyKey) {
       const raced = await Refund.findOne({ merchant: merchantId, idempotencyKey, mode });
       if (raced) {
@@ -397,6 +405,7 @@ async function reverseRefund(refundId, reason, providerRef = null) {
   }
 
   const session = await mongoose.startSession();
+  let committed = false;
   try {
     session.startTransaction();
 
@@ -428,10 +437,13 @@ async function reverseRefund(refundId, reason, providerRef = null) {
     lock.confirmedAt = new Date();
     await lock.save({ session });
 
+    committed = true;
     await session.commitTransaction();
     session.endSession();
   } catch (err) {
-    await session.abortTransaction();
+    if (!committed) {
+      await session.abortTransaction();
+    }
     session.endSession();
     throw err;
   }
