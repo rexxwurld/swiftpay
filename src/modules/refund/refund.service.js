@@ -99,78 +99,77 @@ async function requestRefund({
 
   const session = await mongoose.startSession();
   let refund;
-  let committed = false;
   try {
-    session.startTransaction();
+    // withTransaction() retries the whole callback automatically when
+    // MongoDB reports a transient error (e.g. WriteConflict from two
+    // concurrent requests). On the retry, a duplicate idempotency key
+    // now surfaces as a normal E11000 that the catch block below handles.
+    await session.withTransaction(async () => {
 
-    // Atomically claim `refundAmount` of refundable headroom on the
-    // transaction itself, in the same step as checking it's available -
-    // a compare-and-increment on a single document, same pattern as
-    // wallet.service.js's reserveFunds. This is what actually prevents
-    // two concurrent refund requests from together over-refunding the
-    // transaction, regardless of what either request read before
-    // starting its session.
-    const claimed = await Transaction.findOneAndUpdate(
-      {
-        _id: transaction._id,
-        $expr: {
-          $gte: [
-            { $subtract: ['$amountReceived', '$refundedAmount'] },
-            refundAmount,
-          ],
-        },
-      },
-      { $inc: { refundedAmount: refundAmount } },
-      { new: true, session }
-    );
-
-    if (!claimed) {
-      throw new Error('refund_exceeds_refundable_amount');
-    }
-
-    await debitWallet(merchantId, refundAmount, session, transaction.currency, mode);
-
-    const [created] = await Refund.create(
-      [
+      // Atomically claim `refundAmount` of refundable headroom on the
+      // transaction itself, in the same step as checking it's available -
+      // a compare-and-increment on a single document, same pattern as
+      // wallet.service.js's reserveFunds. This is what actually prevents
+      // two concurrent refund requests from together over-refunding the
+      // transaction, regardless of what either request read before
+      // starting its session.
+      const claimed = await Transaction.findOneAndUpdate(
         {
-          merchant: merchantId,
-          transaction: transaction._id,
-          reference,
-          idempotencyKey,
-          requestFingerprint,
-          amount: refundAmount,
-          currency: transaction.currency,
-          mode,
-          reason: reason || null,
-          destinationBankCode,
-          destinationAccountNumber,
-          destinationAccountName,
-          status: 'pending',
+          _id: transaction._id,
+          $expr: {
+            $gte: [
+              { $subtract: ['$amountReceived', '$refundedAmount'] },
+              refundAmount,
+            ],
+          },
         },
-      ],
-      { session, ordered: true }
-    );
-    refund = created;
+        { $inc: { refundedAmount: refundAmount } },
+        { new: true, session }
+      );
 
-    await postDoubleEntry({
-      entryGroup: `refund_${refund._id}`,
-      amount: refundAmount,
-      currency: transaction.currency,
-      mode,
-      sourceType: 'refund',
-      sourceRef: refund._id.toString(),
-      debit: { accountType: 'merchant_wallet', accountRef: merchantId.toString(), description: 'Refund issued - funds held pending bank confirmation' },
-      credit: { accountType: 'payout_clearing', accountRef: 'platform_clearing', description: 'Funds moved to clearing pending bank confirmation' },
-      session,
+      if (!claimed) {
+        throw new Error('refund_exceeds_refundable_amount');
+      }
+
+      await debitWallet(merchantId, refundAmount, session, transaction.currency, mode);
+
+      const [created] = await Refund.create(
+        [
+          {
+            merchant: merchantId,
+            transaction: transaction._id,
+            reference,
+            idempotencyKey,
+            requestFingerprint,
+            amount: refundAmount,
+            currency: transaction.currency,
+            mode,
+            reason: reason || null,
+            destinationBankCode,
+            destinationAccountNumber,
+            destinationAccountName,
+            status: 'pending',
+          },
+        ],
+        { session, ordered: true }
+      );
+      refund = created;
+
+      await postDoubleEntry({
+        entryGroup: `refund_${refund._id}`,
+        amount: refundAmount,
+        currency: transaction.currency,
+        mode,
+        sourceType: 'refund',
+        sourceRef: refund._id.toString(),
+        debit: { accountType: 'merchant_wallet', accountRef: merchantId.toString(), description: 'Refund issued - funds held pending bank confirmation' },
+        credit: { accountType: 'payout_clearing', accountRef: 'platform_clearing', description: 'Funds moved to clearing pending bank confirmation' },
+        session,
+      });
+
     });
-
-    committed = true;
-    await session.commitTransaction();
     session.endSession();
   } catch (err) {
-    if (!committed) {
-      await session.abortTransaction();
-    }
     session.endSession();
 
     // Same race payout.service.js guards against: two concurrent

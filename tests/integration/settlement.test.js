@@ -113,6 +113,7 @@ describe('settlement.service settle -> available pipeline', () => {
   it('moves a settled transaction to available and credits the correct mode-scoped wallet', async () => {
     const merchant = await makeMerchant();
     await makePendingTransaction(merchant, { mode: 'live', netAmount: 75_000 });
+    await Wallet.create({ merchant: merchant._id, currency: 'NGN', mode: 'live', pendingSettlementBalance: 75_000 });
 
     await runSettlePhase({ currency: 'NGN', mode: 'live', now: FAR_FUTURE });
     const availableBatch = await runMakeAvailablePhase({ currency: 'NGN', mode: 'live', now: FAR_FUTURE });

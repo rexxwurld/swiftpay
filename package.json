@@ -69,5 +69,11 @@
       "!src/server.js",
       "!src/queue/webhookWorker.js"
     ]
+  },
+  "allowScripts": {
+    "bcrypt@5.1.1": true,
+    "mongodb-memory-server@9.5.0": true,
+    "@scarf/scarf": false,
+    "msgpackr-extract": false
   }
 }

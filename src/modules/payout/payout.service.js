@@ -145,74 +145,65 @@ async function requestPayout({
 
   const session = await mongoose.startSession();
   let payout;
-  let committed = false;
   try {
-    session.startTransaction();
+    // withTransaction() retries the whole callback automatically when
+    // MongoDB reports a transient error (e.g. WriteConflict from two
+    // concurrent requests). On the retry, a duplicate idempotency key
+    // now surfaces as a normal E11000 that the catch block below handles.
+    await session.withTransaction(async () => {
 
-    if (mode === 'live') {
-      const dayKey = new Date().toISOString().slice(0, 10);
-      const outboundCounter = await DailyOutboundLimitCounter.findOneAndUpdate(
-        { merchant: merchantId, currency, dayKey },
-        { $inc: { totalSent: amount } },
-        { new: true, upsert: true, session }
-      );
+      if (mode === 'live') {
+        const dayKey = new Date().toISOString().slice(0, 10);
+        const outboundCounter = await DailyOutboundLimitCounter.findOneAndUpdate(
+          { merchant: merchantId, currency, dayKey },
+          { $inc: { totalSent: amount } },
+          { new: true, upsert: true, session }
+        );
 
-      if (outboundCounter.totalSent > merchantLimits.MAX_DAILY_OUTBOUND_MINOR) {
-        throw new Error('payout_exceeds_daily_outbound_limit');
+        if (outboundCounter.totalSent > merchantLimits.MAX_DAILY_OUTBOUND_MINOR) {
+          throw new Error('payout_exceeds_daily_outbound_limit');
+        }
       }
-    }
 
-    const payoutId = new mongoose.Types.ObjectId();
+      const payoutId = new mongoose.Types.ObjectId();
 
-    await reserveFundsWithLedgerEntry({
-      merchantId,
-      amountMinorUnits: amount,
-      currency,
-      mode,
-      session,
-      entryGroup: `payout_${payoutId}`,
-      sourceType: 'payout',
-      sourceRef: payoutId.toString(),
-      debitDescription: 'Payout requested - funds reserved',
-      creditDescription: 'Funds moved to payout clearing pending bank confirmation',
+      await reserveFundsWithLedgerEntry({
+        merchantId,
+        amountMinorUnits: amount,
+        currency,
+        mode,
+        session,
+        entryGroup: `payout_${payoutId}`,
+        sourceType: 'payout',
+        sourceRef: payoutId.toString(),
+        debitDescription: 'Payout requested - funds reserved',
+        creditDescription: 'Funds moved to payout clearing pending bank confirmation',
+      });
+
+      const [created] = await Payout.create(
+        [
+          {
+            _id: payoutId,
+            merchant: merchantId,
+            reference,
+            idempotencyKey,
+            requestFingerprint,
+            amount,
+            currency,
+            mode,
+            destinationBankCode,
+            destinationAccountNumber,
+            destinationAccountName,
+            status: 'reserved',
+          },
+        ],
+        { session, ordered: true }
+      );
+      payout = created;
+
     });
-
-    const [created] = await Payout.create(
-      [
-        {
-          _id: payoutId,
-          merchant: merchantId,
-          reference,
-          idempotencyKey,
-          requestFingerprint,
-          amount,
-          currency,
-          mode,
-          destinationBankCode,
-          destinationAccountNumber,
-          destinationAccountName,
-          status: 'reserved',
-        },
-      ],
-      { session, ordered: true }
-    );
-    payout = created;
-
-    committed = true;
-    await session.commitTransaction();
     session.endSession();
   } catch (err) {
-    // If commitTransaction() itself is what threw (the concurrent-
-    // duplicate-idempotency-key race below), MongoDB has already
-    // aborted the transaction server-side, and the driver's session
-    // state machine refuses a client-side abortTransaction() after a
-    // commit was attempted - calling it anyway throws a NEW error
-    // ("Cannot call abortTransaction after calling commitTransaction")
-    // that masks the real one and breaks the E11000 recovery below.
-    // Only abort if we know we never reached the commit attempt.
-    if (!committed) {
-      await session.abortTransaction();
-    }
     session.endSession();
 
     if (err.code === 11000 && idempotencyKey) {
@@ -322,7 +313,7 @@ async function requestPayout({
     }
   }
 
-  return payout;
+  return (await Payout.findById(payout._id)) || payout;
 }
 
 async function finalizePayoutSuccess(payoutId, providerReference = null) {

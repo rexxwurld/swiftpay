@@ -55,61 +55,55 @@ async function requestWithdrawal({ merchantId, amount, currency = 'NGN', idempot
   const reference = `wd_${crypto.randomBytes(12).toString('hex')}`;
   const session = await mongoose.startSession();
   let withdrawal;
-  let committed = false;
 
   try {
-    session.startTransaction();
+    // withTransaction() retries the whole callback automatically when
+    // MongoDB reports a transient error (e.g. WriteConflict from two
+    // concurrent requests). On the retry, a duplicate idempotency key
+    // now surfaces as a normal E11000 that the catch block below handles.
+    await session.withTransaction(async () => {
 
-    if (mode === 'live') {
-      const dayKey = new Date().toISOString().slice(0, 10);
-      const outboundCounter = await DailyOutboundLimitCounter.findOneAndUpdate(
-        { merchant: merchantId, currency, dayKey },
-        { $inc: { totalSent: amount } },
-        { new: true, upsert: true, session }
-      );
+      if (mode === 'live') {
+        const dayKey = new Date().toISOString().slice(0, 10);
+        const outboundCounter = await DailyOutboundLimitCounter.findOneAndUpdate(
+          { merchant: merchantId, currency, dayKey },
+          { $inc: { totalSent: amount } },
+          { new: true, upsert: true, session }
+        );
 
-      if (outboundCounter.totalSent > merchantLimits.MAX_DAILY_OUTBOUND_MINOR) {
-        throw new Error('withdrawal_exceeds_daily_outbound_limit');
+        if (outboundCounter.totalSent > merchantLimits.MAX_DAILY_OUTBOUND_MINOR) {
+          throw new Error('withdrawal_exceeds_daily_outbound_limit');
+        }
       }
-    }
 
-    const withdrawalId = new mongoose.Types.ObjectId();
+      const withdrawalId = new mongoose.Types.ObjectId();
 
-    await reserveFundsWithLedgerEntry({
-      merchantId,
-      amountMinorUnits: amount,
-      currency,
-      mode,
-      session,
-      entryGroup: `withdrawal_${withdrawalId}`,
-      sourceType: 'withdrawal',
-      sourceRef: withdrawalId.toString(),
-      debitDescription: 'Withdrawal requested - funds reserved',
-      creditDescription: 'Funds moved to withdrawal clearing pending bank confirmation',
+      await reserveFundsWithLedgerEntry({
+        merchantId,
+        amountMinorUnits: amount,
+        currency,
+        mode,
+        session,
+        entryGroup: `withdrawal_${withdrawalId}`,
+        sourceType: 'withdrawal',
+        sourceRef: withdrawalId.toString(),
+        debitDescription: 'Withdrawal requested - funds reserved',
+        creditDescription: 'Funds moved to withdrawal clearing pending bank confirmation',
+      });
+
+      const [created] = await Withdrawal.create([{
+        _id: withdrawalId,
+        merchant: merchantId, reference, idempotencyKey, requestFingerprint, amount, currency, mode,
+        destinationBankCode: account.bankCode,
+        destinationAccountNumber: account.accountNumber,
+        destinationAccountName: account.accountName,
+        status: 'reserved',
+      }], { session, ordered: true });
+      withdrawal = created;
+
     });
-
-    const [created] = await Withdrawal.create([{
-      _id: withdrawalId,
-      merchant: merchantId, reference, idempotencyKey, requestFingerprint, amount, currency, mode,
-      destinationBankCode: account.bankCode,
-      destinationAccountNumber: account.accountNumber,
-      destinationAccountName: account.accountName,
-      status: 'reserved',
-    }], { session, ordered: true });
-    withdrawal = created;
-
-    committed = true;
-    await session.commitTransaction();
     session.endSession();
   } catch (err) {
-    // See payout.service.js's identical fix: once commitTransaction() has
-    // been attempted, the driver's session no longer allows
-    // abortTransaction() - calling it anyway throws a new error that
-    // masks the real one (here, the E11000 idempotency race below) and
-    // breaks its recovery path entirely.
-    if (!committed) {
-      await session.abortTransaction();
-    }
     session.endSession();
     if (err.code === 11000 && idempotencyKey) {
       const raced = await Withdrawal.findOne({ merchant: merchantId, idempotencyKey, mode });
