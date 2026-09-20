@@ -9,6 +9,18 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
 
     strategy:
       matrix:
@@ -34,6 +46,7 @@ jobs:
           JWT_SECRET: ci_test_secret
           BANK_WEBHOOK_SECRET: ci_test_secret
           INFRA_ADMIN_KEY: ci_test_admin_key
+          REDIS_URL: redis://127.0.0.1:6379
 
   docker-build:
     runs-on: ubuntu-latest
