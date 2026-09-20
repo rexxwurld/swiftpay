@@ -39,7 +39,7 @@ jobs:
         run: npm ci
 
       - name: Run tests
-        run: npm test
+        run: npm test -- --forceExit
         env:
           NODE_ENV: test
           JWT_SECRET: ci_test_secret
