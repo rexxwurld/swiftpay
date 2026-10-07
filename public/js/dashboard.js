@@ -21,12 +21,11 @@ let customerById = {};
 let walletPendingMinor = null;
 
 // The dashboard is a session login (httpOnly cookie), which has no
-// key-derived mode - see auth.middleware. Session calls must still tell
-// the API which wallet/transaction set to read, so this stays fixed at
-// 'live': a logged-in merchant looking at their dashboard wants their
-// real numbers, not a hidden toggle they might forget is set to test.
-// Test-mode data is still fully reachable via a sk_test_ API key.
-const VIEW_MODE = 'live';
+// key-derived mode, so the sidebar Demo/Live switch picks it. 'test' is
+// shown as "Demo" in the UI. Live needs a verified merchant. The choice is
+// remembered per browser.
+let VIEW_MODE = localStorage.getItem('swiftpay_mode') === 'live' ? 'live' : 'test';
+let merchantVerified = false;
 
 function toast(msg, isErr = false) {
   const t = document.getElementById('toast');
@@ -81,6 +80,13 @@ document.querySelectorAll('[data-goto]').forEach(btn => {
 /* ---------- Profile ---------- */
 async function loadProfile() {
   const res = await api('/api/merchant/me');
+  merchantVerified = !!res.data.isVerified;
+  if (!merchantVerified && VIEW_MODE === 'live') {
+    VIEW_MODE = 'test';
+    localStorage.setItem('swiftpay_mode', 'test');
+  }
+  syncModeUi();
+  renderVerification();
   document.getElementById('bizName').textContent = res.data.businessName;
   document.getElementById('bizEmail').textContent = res.data.email;
   document.getElementById('webhookUrlInput').value = res.data.webhookUrl || '';
@@ -924,7 +930,7 @@ document.getElementById('linkForm').addEventListener('submit', async (e) => {
     const amountMinor = Math.round(amountNaira * 100);
     const res = await api('/api/payments/initialize', {
       method: 'POST',
-      body: JSON.stringify({ amount: amountMinor, customer: { email, name: name || undefined } }),
+      body: JSON.stringify({ amount: amountMinor, mode: VIEW_MODE, customer: { email, name: name || undefined } }),
     });
     document.getElementById('linkResult').innerHTML = `
       <div class="link-card">
@@ -1575,8 +1581,67 @@ document.getElementById('rtxExportBtn')?.addEventListener('click', () => {
   URL.revokeObjectURL(url);
 });
 
+/* ---------- Demo / Live switch + self-verification ---------- */
+function syncModeUi() {
+  document.querySelectorAll('#modeSwitch .mode-opt').forEach((b) => {
+    b.classList.toggle('active', b.dataset.mode === VIEW_MODE);
+  });
+}
+
+function renderVerification() {
+  const badge = document.getElementById('verifyBadge');
+  badge.textContent = merchantVerified ? 'verified' : 'unverified';
+  badge.classList.toggle('live', merchantVerified);
+  document.getElementById('verifyForm').style.display = merchantVerified ? 'none' : '';
+  document.getElementById('verifyDesc').textContent = merchantVerified
+    ? 'Your account is verified. You can create live payment links and use Live mode.'
+    : 'Verify your account to create live payment links and switch the dashboard to Live mode.';
+}
+
+document.querySelectorAll('#modeSwitch .mode-opt').forEach((btn) => {
+  btn.addEventListener('click', async () => {
+    const next = btn.dataset.mode;
+    if (next === VIEW_MODE) return;
+    if (next === 'live' && !merchantVerified) {
+      toast('Verify your account in Settings to use Live mode', true);
+      showTab('settings');
+      return;
+    }
+    VIEW_MODE = next;
+    localStorage.setItem('swiftpay_mode', next);
+    syncModeUi();
+    try {
+      await refreshAll();
+      toast(next === 'live' ? 'Switched to Live mode' : 'Switched to Demo mode');
+    } catch (err) {
+      if (err.message !== 'unauthenticated') toast(err.message.replace(/_/g, ' '), true);
+    }
+  });
+});
+
+document.getElementById('verifyBtn').addEventListener('click', async () => {
+  const input = document.getElementById('verifyPassword');
+  if (!input.value) { toast('Enter your password to verify', true); return; }
+  try {
+    await api('/api/merchant/verify', { method: 'POST', body: JSON.stringify({ password: input.value }) });
+    input.value = '';
+    merchantVerified = true;
+    renderVerification();
+    toast('Account verified - Live mode unlocked');
+  } catch (err) {
+    toast(err.message.replace(/_/g, ' '), true);
+  }
+});
+
 renderGreeting();
 
-refreshAll().catch((err) => {
-  if (err.message !== 'unauthenticated') toast(err.message, true);
-});
+(async () => {
+  try {
+    // Profile first: it tells us whether a saved 'live' choice is still allowed
+    // before any mode-scoped data (wallet, transactions, payouts) is requested.
+    await loadProfile();
+    await refreshAll();
+  } catch (err) {
+    if (err.message !== 'unauthenticated') toast(err.message, true);
+  }
+})();
