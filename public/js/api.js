@@ -4,14 +4,22 @@
 async function api(path, options = {}) {
   const res = await fetch(path, {
     ...options,
-    headers: { 'Content-Type': 'application/json','X-Requested-With': 'XMLHttpRequest', ...(options.headers || {}) },
+    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', ...(options.headers || {}) },
     credentials: 'same-origin',
   });
   const body = await res.json().catch(() => ({}));
+
   if (res.status === 401) {
-    window.location.href = '/onboarding.html';
-    throw new Error('unauthenticated');
+    // /api/auth/* returns 401 for bad credentials / bad 2FA codes. That is a
+    // normal form error, not an expired session - never redirect for it,
+    // otherwise a wrong password reloads the login page with "unauthenticated".
+    const isAuthEndpoint = /\/api(\/v1)?\/auth\//.test(path);
+    if (!isAuthEndpoint) {
+      window.location.href = '/onboarding?tab=login';
+      throw new Error('unauthenticated');
+    }
   }
+
   if (!res.ok || body.status === false) {
     throw new Error(body.message || `request_failed_${res.status}`);
   }

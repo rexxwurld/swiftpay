@@ -873,7 +873,7 @@ function renderInsights() {
 /* ---------- Event wiring: existing panels ---------- */
 async function performLogout() {
   await api('/api/auth/logout', { method: 'POST' }).catch(() => {});
-  window.location.href = '/onboarding.html?tab=login';
+  window.location.href = '/onboarding?tab=login';
 }
 
 document.getElementById('logoutBtn').addEventListener('click', performLogout);
