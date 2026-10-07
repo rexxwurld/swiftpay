@@ -207,6 +207,9 @@
   .mode-opt { flex: 1; border: 0; background: transparent; padding: 7px 0; border-radius: 8px; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--ink-dim); cursor: pointer; }
   .mode-opt.active { background: var(--surface); color: var(--brand-darker); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
   .mode-opt[data-mode="live"].active { background: var(--green-bg); color: var(--green); }
+  .kyc-file { font-size: 12px; color: var(--ink-dim); min-height: 16px; word-break: break-all; }
+  .kyc-reject { margin: 0 0 12px; padding: 10px 12px; border-radius: 8px; background: var(--red-bg); color: var(--red); font-size: 13px; line-height: 1.5; }
+  .kyc-hint { margin: 0 0 12px; padding: 10px 12px; border-radius: 8px; background: var(--amber-bg); color: var(--amber); font-size: 13px; line-height: 1.5; }
 
   /* ---------- Main ---------- */
   .main { flex: 1; min-width: 0; padding: 26px 28px 64px; max-width: 1180px; margin: 0 auto; }
@@ -1235,17 +1238,73 @@
 
       <div class="panel">
         <div class="panel-head">
-          <h2>Account verification</h2>
-          <span class="mode-tag" id="verifyBadge">unverified</span>
+          <h2>Go live - business verification</h2>
+          <span class="mode-tag" id="kycBadge">not started</span>
         </div>
         <div class="panel-body">
-          <p id="verifyDesc" style="margin:0 0 12px;font-size:13px;color:var(--ink-dim);line-height:1.6;"></p>
-          <div class="inline-form" id="verifyForm">
-            <div class="field">
-              <label>Confirm your password</label>
-              <input type="password" id="verifyPassword" autocomplete="current-password" />
+          <p id="kycDesc" style="margin:0 0 12px;font-size:13px;color:var(--ink-dim);line-height:1.6;"></p>
+          <div class="kyc-reject" id="kycReject" style="display:none;"></div>
+          <div class="kyc-hint" id="kycSettleHint" style="display:none;">Add a settlement account first (Settlement account, in Settings) - it is required before you can submit.</div>
+          <div id="kycForm">
+            <div class="inline-form">
+              <div class="field">
+                <label>Business type</label>
+                <select id="kycBusinessType">
+                  <option value="">Select...</option>
+                  <option value="individual">Individual</option>
+                  <option value="sole_proprietor">Sole proprietor</option>
+                  <option value="registered_company">Registered company</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Legal / business name</label>
+                <input type="text" id="kycLegalName" maxlength="120" />
+              </div>
+              <div class="field">
+                <label>Business address</label>
+                <input type="text" id="kycAddress" maxlength="300" />
+              </div>
+              <div class="field">
+                <label>Website (optional)</label>
+                <input type="text" id="kycWebsite" maxlength="200" placeholder="https://" />
+              </div>
+              <div class="field">
+                <label>What do you sell?</label>
+                <input type="text" id="kycDescription" maxlength="500" />
+              </div>
+              <div class="field">
+                <label>Owner full name (as on ID)</label>
+                <input type="text" id="kycOwnerName" maxlength="120" />
+              </div>
+              <div class="field">
+                <label>ID type</label>
+                <select id="kycIdType">
+                  <option value="">Select...</option>
+                  <option value="nin">NIN slip / card</option>
+                  <option value="drivers_license">Driver's licence</option>
+                  <option value="passport">International passport</option>
+                  <option value="voters_card">Voter's card</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>ID document (JPG, PNG or PDF, max 5 MB)</label>
+                <input type="file" id="kycFile_id" accept="image/jpeg,image/png,application/pdf" />
+                <div class="kyc-file" id="kycFileStatus_id"></div>
+              </div>
+              <div class="field">
+                <label>Proof of address (optional)</label>
+                <input type="file" id="kycFile_proof_of_address" accept="image/jpeg,image/png,application/pdf" />
+                <div class="kyc-file" id="kycFileStatus_proof_of_address"></div>
+              </div>
+              <div class="field" id="kycCacField" style="display:none;">
+                <label>CAC certificate (required for registered companies)</label>
+                <input type="file" id="kycFile_cac" accept="image/jpeg,image/png,application/pdf" />
+                <div class="kyc-file" id="kycFileStatus_cac"></div>
+              </div>
+              <div style="width:100%;">
+                <button type="button" class="btn btn-accent" id="kycSubmitBtn">Submit for review</button>
+              </div>
             </div>
-            <button type="button" class="btn btn-accent" id="verifyBtn">Verify my account</button>
           </div>
         </div>
       </div>

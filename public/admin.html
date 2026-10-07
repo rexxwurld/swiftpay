@@ -302,6 +302,28 @@
   </div>
 
   <div class="section-head">
+    <h2>Business verification (KYC)</h2>
+    <div>
+      <select id="kycStatusFilter" style="margin-right:8px;">
+        <option value="pending" selected>Pending</option>
+        <option value="approved">Approved</option>
+        <option value="rejected">Rejected</option>
+      </select>
+      <button class="btn" id="kycRefreshBtn">Refresh</button>
+    </div>
+  </div>
+  <div class="card">
+    <table>
+      <thead>
+        <tr><th>Business</th><th>Owner</th><th>Type</th><th>Submitted</th><th></th></tr>
+      </thead>
+      <tbody id="kycTableBody"></tbody>
+    </table>
+    <div class="empty" id="kycEmpty" style="display:none;">Nothing here.</div>
+  </div>
+  <div class="card" id="kycReview" style="display:none; padding:16px; margin-top:12px;"></div>
+
+  <div class="section-head">
     <h2>Merchants</h2>
     <button class="btn" id="merchRefreshBtn">Refresh</button>
   </div>
