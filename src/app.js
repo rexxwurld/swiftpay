@@ -95,8 +95,10 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+      // jsdelivr: Chart.js. cdnjs: Font Awesome CSS only (no scripts).
+      // Inline <script> blocks are NOT allowed - page scripts live in /js/*.js.
       'script-src': ["'self'", 'https://cdn.jsdelivr.net'],
-      'style-src': ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
+      'style-src': ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net', 'https://cdnjs.cloudflare.com', 'https://fonts.googleapis.com'],
     },
   },
 }));
@@ -147,14 +149,31 @@ app.get('/admin', (req, res) => {
 });
 
 
-// Static frontend files.
+// Clean URLs: /folder/pricing.html -> 301 -> /folder/pricing, index.html -> /.
+// pay.html is excluded: it's only ever served via /pay/:checkoutToken above.
+app.use((req, res, next) => {
+  if (
+    (req.method === 'GET' || req.method === 'HEAD') &&
+    /\.html$/i.test(req.path) &&
+    req.path !== '/pay.html'
+  ) {
+    let clean = req.path.replace(/\.html$/i, '').replace(/^\/+/, '/'); // collapse leading slashes: blocks //host open redirects
+    if (clean === '/index') clean = '/';
+    return res.redirect(301, clean + req.url.slice(req.path.length)); // keep ?query
+  }
+  next();
+});
+
+// Static frontend files. `extensions: ['html']` serves /onboarding from
+// onboarding.html, /folder/pricing from folder/pricing.html, etc.
 app.use(
   express.static(
     path.join(
       __dirname,
       '..',
       'public'
-    )
+    ),
+    { extensions: ['html'] }
   )
 );
 
