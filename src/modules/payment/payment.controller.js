@@ -12,7 +12,7 @@ async function initialize(req, res) {
     // used to default to 'live' despite this comment saying otherwise -
     // a dashboard-authenticated session could silently create a real,
     // live virtual account (see audit report, High #10).
-    const mode = req.merchant.mode || 'test';
+    const mode = req.merchant.mode || (req.body.mode === 'live' ? 'live' : 'test');
 
     if (mode === 'live' && !req.merchant.isVerified) {
       return res.status(403).json({
