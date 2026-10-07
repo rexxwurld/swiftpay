@@ -72,9 +72,16 @@ async function startDemoCheckout({ amount, name, email, phone, baseUrl }) {
 
   const merchantId = await getOrCreateDemoMerchant();
 
+  // After the simulated transfer, /api/checkout/:token/complete 303s here
+  // (with ?tx_ref=...&status=successful appended). Production requires https
+  // (see validateRedirectUrl), so skip the redirect rather than break the demo.
+  // PUBLIC_BASE_URL (optional) pins the target instead of trusting the Host header.
+  const homeUrl = new URL('/', process.env.PUBLIC_BASE_URL || baseUrl).toString(); // origin + '/'
+  const canRedirect = process.env.NODE_ENV !== 'production' || homeUrl.startsWith('https://');
+
   const result = await initializePayment({
     merchantId,
-    redirect_url: new URL('/', process.env.PUBLIC_BASE_URL || baseUrl).toString(),
+    redirect_url: canRedirect ? homeUrl : undefined,
     amount: amountMinor, // this form collects naira from a human - convert to the API's minor-units contract here, not inside initializePayment
     customer: { email: trimmedEmail, name: trimmedName, phone: trimmedPhone || null },
     baseUrl,
