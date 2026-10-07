@@ -1,3 +1,9 @@
+// Landing here after a demo checkout: the server appends ?tx_ref=...&status=successful.
+// Strip it so the homepage URL stays clean.
+if (new URLSearchParams(location.search).has('tx_ref')) {
+  history.replaceState(null, '', location.pathname + location.hash);
+}
+
 document.addEventListener("DOMContentLoaded", function () {
 
   /* =====================================================

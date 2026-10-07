@@ -154,6 +154,8 @@
     padding: 18px 12px 30px;
     border-right: 1px solid var(--line);
     background: var(--surface);
+    display: flex;
+    flex-direction: column;
   }
   .sidebar-group { margin-bottom: 16px; }
   .sidebar-label {
@@ -200,7 +202,11 @@
     text-align: center;
   }
   .side-link.active .badge-count { background: rgba(255,255,255,.18); color: #fff; }
-  .sidebar-foot { padding: 10px 12px 0; border-top: 1px solid var(--line-soft); margin-top: 6px; }
+  .sidebar-foot { padding: 10px 12px 0; border-top: 1px solid var(--line-soft); margin-top: auto; }
+  .mode-switch { display: flex; gap: 4px; padding: 3px; margin-top: 6px; background: var(--brand-50); border: 1px solid var(--brand-100); border-radius: 10px; }
+  .mode-opt { flex: 1; border: 0; background: transparent; padding: 7px 0; border-radius: 8px; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--ink-dim); cursor: pointer; }
+  .mode-opt.active { background: var(--surface); color: var(--brand-darker); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .mode-opt[data-mode="live"].active { background: var(--green-bg); color: var(--green); }
 
   /* ---------- Main ---------- */
   .main { flex: 1; min-width: 0; padding: 26px 28px 64px; max-width: 1180px; margin: 0 auto; }
@@ -536,7 +542,13 @@
         Settings
       </button>
     </div>
-    <div class="sidebar-foot"></div>
+    <div class="sidebar-foot">
+      <div class="sidebar-label">Mode</div>
+      <div class="mode-switch" id="modeSwitch" role="group" aria-label="Dashboard mode">
+        <button type="button" class="mode-opt" data-mode="test">Demo</button>
+        <button type="button" class="mode-opt" data-mode="live">Live</button>
+      </div>
+    </div>
   </aside>
 
   <div class="main">
@@ -1217,6 +1229,23 @@
               <div class="k-label">Live public key</div>
               <div class="k-val2" id="setLivePubKey">—</div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Account verification</h2>
+          <span class="mode-tag" id="verifyBadge">unverified</span>
+        </div>
+        <div class="panel-body">
+          <p id="verifyDesc" style="margin:0 0 12px;font-size:13px;color:var(--ink-dim);line-height:1.6;"></p>
+          <div class="inline-form" id="verifyForm">
+            <div class="field">
+              <label>Confirm your password</label>
+              <input type="password" id="verifyPassword" autocomplete="current-password" />
+            </div>
+            <button type="button" class="btn btn-accent" id="verifyBtn">Verify my account</button>
           </div>
         </div>
       </div>
