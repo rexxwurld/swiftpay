@@ -1,4 +1,5 @@
 // src/modules/merchant/merchant.service.js
+const bcrypt = require('bcrypt');
 const Merchant = require('./merchant.model');
 const { generateKeyPair, hashSecretKey, generateWebhookSecret } = require('../../utils/apiKeys');
 const { assertSafeWebhookUrl } = require('../../utils/ssrfGuard');
@@ -96,4 +97,23 @@ async function setSettlementAccount(merchantId, { bankCode, accountNumber, accou
   return merchant;
 }
 
-module.exports = { getProfile, updateWebhookUrl, regenerateSecretKey, regenerateWebhookSecret, setSettlementAccount };
+// Self-service verification: the merchant confirms their password and is
+// marked verified, which unlocks live payments. Set ALLOW_SELF_VERIFICATION=false
+// to turn this off and go back to verifying merchants by hand.
+async function selfVerifyMerchant(merchantId, password) {
+  if (process.env.ALLOW_SELF_VERIFICATION === 'false') throw new Error('self_verification_disabled');
+
+  const merchant = await Merchant.findById(merchantId);
+  if (!merchant) throw new Error('merchant_not_found');
+  if (merchant.isVerified) return { isVerified: true };
+
+  const ok = typeof password === 'string' && password.length > 0 && await bcrypt.compare(password, merchant.passwordHash);
+  if (!ok) throw new Error('invalid_credentials');
+
+  merchant.isVerified = true;
+  await merchant.save();
+  await auditLog.record({ actorType: 'merchant', actorRef: merchantId.toString(), action: 'merchant.self_verified', entityType: 'Merchant', entityRef: merchantId.toString(), severity: 'warning' });
+  return { isVerified: true };
+}
+
+module.exports = { getProfile, updateWebhookUrl, regenerateSecretKey, regenerateWebhookSecret, setSettlementAccount, selfVerifyMerchant };

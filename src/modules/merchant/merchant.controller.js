@@ -1,5 +1,5 @@
 // src/modules/merchant/merchant.controller.js
-const { getProfile, updateWebhookUrl, regenerateSecretKey, regenerateWebhookSecret, setSettlementAccount } = require('./merchant.service');
+const { getProfile, updateWebhookUrl, regenerateSecretKey, regenerateWebhookSecret, setSettlementAccount, selfVerifyMerchant } = require('./merchant.service');
 
 async function profile(req, res) {
   const merchant = await getProfile(req.merchant.id);
@@ -50,5 +50,18 @@ async function updateSettlementAccount(req, res) {
   } catch (err) { res.status(400).json({ status: false, message: err.message }); }
 }
 
-module.exports = { profile, updateWebhook, regenerateKey, regenerateWebhook, updateSettlementAccount };
+async function selfVerify(req, res) {
+  try {
+    // Dashboard sessions only - an API key must not be able to verify its own merchant.
+    if (req.merchant.mode) {
+      return res.status(403).json({ status: false, message: 'dashboard_session_required' });
+    }
+    const result = await selfVerifyMerchant(req.merchant.id, req.body.password);
+    res.json({ status: true, data: result });
+  } catch (err) {
+    res.status(400).json({ status: false, message: err.message });
+  }
+}
+
+module.exports = { profile, updateWebhook, regenerateKey, regenerateWebhook, updateSettlementAccount, selfVerify };
 
