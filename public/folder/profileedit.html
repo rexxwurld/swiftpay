@@ -179,7 +179,7 @@
 
 <!-- NAVBAR -->
 <div class="navbar">
-  <div class="logo"><a href="../index.html">SwiftPay</a></div>
+  <div class="logo"><a href="/">SwiftPay</a></div>
   <div class="menu-icon" id="menuIcon"><span></span><span></span><span></span></div>
 </div>
 
@@ -190,8 +190,8 @@
     <div class="profile-pic-container">
       <img id="sidebarProfilePic" src="https://via.placeholder.com/100" alt="Profile Picture">
     </div>
-    <a href="dashboard.html">Back to dashboard</a>
-    <a href="/onboarding.html?tab=login" id="logoutBtn" style="color:#ef4444;">Logout</a>
+    <a href="/dashboard">Back to dashboard</a>
+    <a href="/onboarding?tab=login" id="logoutBtn" style="color:#ef4444;">Logout</a>
   </div>
 
   <!-- CONTENT -->
@@ -208,14 +208,6 @@
 
     <label for="email">Email</label>
     <input type="email" id="email" placeholder="Enter email">
-    
-
-   <label for="password">Password</label>
-
-<div class="password-wrapper">
-  <input type="password" id="password" placeholder="Enter new password" required>
-  <span id="togglePassword">👁</span>
-</div>
 
     <label for="uploadProfile">Upload Profile Picture</label>
     <input type="file" id="uploadProfile" accept="image/*">
@@ -225,116 +217,6 @@
 
 </div>
 
-<!-- jQuery -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
-<script>
-$(document).ready(function(){
-
-  // ===================== Hamburger toggle =====================
-  $('#menuIcon').click(function(e){
-    e.stopPropagation();
-    $('#sidebar').toggleClass('active');
-    $(this).toggleClass('active');
-  });
-
-  $(document).click(function(e){
-    if($(window).width() <= 900 && $('#sidebar').hasClass('active')){
-      if(!$(e.target).is('#menuIcon') && !$(e.target).closest('#menuIcon').length){
-        $('#sidebar').removeClass('active');
-        $('#menuIcon').removeClass('active');
-      }
-    }
-  });
-
-  $('#sidebar a').click(function(){
-    if($(window).width() <= 900){
-      $('#sidebar').removeClass('active');
-      $('#menuIcon').removeClass('active');
-    }
-  });
-
-
-  $('#togglePassword').click(function(){
-  const input = $('#password');
-
-  if(input.attr('type') === 'password'){
-    input.attr('type', 'text');
-    $(this).text('🙈');
-  } else {
-    input.attr('type', 'password');
-    $(this).text('👁');
-  }
-});
-
-
-  
-
-
-
-
-
-
-  // ===================== Load profile info =====================
-  const fullname = localStorage.getItem('fullname') || '';
-  const email = localStorage.getItem('email') || '';
-  const password = localStorage.getItem('password') || '';
-  const profilePic = localStorage.getItem('profilePic') || '';
-  const emailVerified = localStorage.getItem('emailVerified') || 'false';
-
-  if(fullname) $('#fullname').val(fullname);
-  if(email) $('#email').val(email);
-  if(password) $('#password').val(password);
-  if(profilePic){
-    $('#profilePicPreview').attr('src', profilePic);
-    $('#sidebarProfilePic').attr('src', profilePic);
-  }
-
-  
-  // ===================== Profile picture upload =====================
-  $('#uploadProfile').on('change', function(e){
-    const file = e.target.files[0];
-    if(file){
-      const reader = new FileReader();
-      reader.onload = function(event){
-        const imgData = event.target.result;
-        $('#profilePicPreview').attr('src', imgData);
-        $('#sidebarProfilePic').attr('src', imgData);
-        localStorage.setItem('profilePic', imgData);
-      }
-      reader.readAsDataURL(file);
-    }
-  });
-
-  // ===================== Save changes =====================
-  $('#saveBtn').click(function(){
-    const fullname = $('#fullname').val().trim();
-    const email = $('#email').val().trim();
-    const password = $('#password').val().trim();
-
-    if(!fullname){ alert('Full name is required!'); return; }
-    if(!email){ alert('Email is required!'); return; }
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if(!emailRegex.test(email)){ alert('Please enter a valid email address!'); return; }
-    if(!password){ alert('Password is required!'); return; }
-
-    localStorage.setItem('fullname', fullname);
-    localStorage.setItem('email', email);
-    localStorage.setItem('password', password);
-    localStorage.setItem('emailVerified', 'false'); // reset verification
-
-    alert('Profile updated successfully! ✅ Please verify your email');
-
-    // Redirect to My Profile
-    window.location.href = 'myprofile.html';
-  });
-
-  // ===================== Logout =====================
-  $('#logoutBtn').click(function(){
-    localStorage.clear();
-    window.location.href = "/onboarding.html?tab=login";
-  });
-
-});
-</script>
+<script src="/js/profileedit.js"></script>
 </body>
 </html>
