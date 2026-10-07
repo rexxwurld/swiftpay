@@ -41,7 +41,41 @@ const merchantSchema = new mongoose.Schema(
     testKeyLastUsedAt: { type: Date, default: null },
     liveKeyLastUsedAt: { type: Date, default: null },
 
+    // True only after an admin approves the KYC submission below (or a legacy
+    // manual verification). Every live-mode gate checks this flag.
     isVerified: { type: Boolean, default: false },
+
+    // Business verification ("Go live"). See merchant.kyc.service.js.
+    // Document `key`s point at private objects in R2 and must never be sent
+    // to the merchant - only to an admin, as short-lived signed URLs.
+    kyc: {
+      status: { type: String, enum: ['not_started', 'pending', 'approved', 'rejected'], default: 'not_started' },
+      businessType: { type: String, enum: ['individual', 'sole_proprietor', 'registered_company'] },
+      legalName: { type: String },
+      address: { type: String },
+      website: { type: String },
+      businessDescription: { type: String },
+      ownerFullName: { type: String },
+      idType: { type: String, enum: ['nin', 'drivers_license', 'passport', 'voters_card'] },
+      documents: {
+        type: [
+          {
+            kind: { type: String, enum: ['id', 'proof_of_address', 'cac'], required: true },
+            key: { type: String, required: true },
+            originalName: { type: String },
+            contentType: { type: String },
+            size: { type: Number },
+            uploadedAt: { type: Date },
+            _id: false,
+          },
+        ],
+        default: [],
+      },
+      submittedAt: { type: Date },
+      reviewedAt: { type: Date },
+      reviewedBy: { type: String },
+      rejectionReason: { type: String },
+    },
 
     // Per-merchant platform fee override. Any field left unset falls
     // back to the global default in src/config/fees.js. Set via the

@@ -1,5 +1,6 @@
 // src/modules/merchant/merchant.controller.js
-const { getProfile, updateWebhookUrl, regenerateSecretKey, regenerateWebhookSecret, setSettlementAccount, selfVerifyMerchant } = require('./merchant.service');
+const { getProfile, updateWebhookUrl, regenerateSecretKey, regenerateWebhookSecret, setSettlementAccount } = require('./merchant.service');
+const kycService = require('./merchant.kyc.service');
 
 async function profile(req, res) {
   const merchant = await getProfile(req.merchant.id);
@@ -50,18 +51,54 @@ async function updateSettlementAccount(req, res) {
   } catch (err) { res.status(400).json({ status: false, message: err.message }); }
 }
 
-async function selfVerify(req, res) {
-  try {
-    // Dashboard sessions only - an API key must not be able to verify its own merchant.
-    if (req.merchant.mode) {
-      return res.status(403).json({ status: false, message: 'dashboard_session_required' });
-    }
-    const result = await selfVerifyMerchant(req.merchant.id, req.body.password);
-    res.json({ status: true, data: result });
-  } catch (err) {
-    res.status(400).json({ status: false, message: err.message });
+// KYC is dashboard-only: an API key must never be able to submit or alter
+// its own merchant's verification.
+function sessionOnly(req, res, next) {
+  if (req.merchant.mode) {
+    return res.status(403).json({ status: false, message: 'dashboard_session_required' });
   }
+  next();
 }
 
-module.exports = { profile, updateWebhook, regenerateKey, regenerateWebhook, updateSettlementAccount, selfVerify };
+// Errors the merchant can safely be shown. Anything else (storage/SDK
+// internals) is logged and replaced with a generic message.
+const KYC_USER_ERRORS = new Set([
+  'invalid_document_kind', 'file_required', 'file_too_large', 'unsupported_file_type', 'kyc_not_editable',
+  'business_type_invalid', 'id_type_invalid', 'legal_name_invalid', 'address_invalid', 'owner_name_invalid',
+  'business_description_too_short', 'website_invalid', 'id_document_required', 'cac_document_required',
+  'add_a_settlement_account_first', 'merchant_not_found',
+]);
+
+function kycError(res, err) {
+  if (err.message === 'storage_not_configured') {
+    return res.status(503).json({ status: false, message: 'document_storage_unavailable' });
+  }
+  if (KYC_USER_ERRORS.has(err.message)) {
+    return res.status(400).json({ status: false, message: err.message });
+  }
+  console.error('kyc error:', err);
+  return res.status(500).json({ status: false, message: 'something_went_wrong' });
+}
+
+async function kycStatus(req, res) {
+  try {
+    res.json({ status: true, data: await kycService.getKyc(req.merchant.id) });
+  } catch (err) { kycError(res, err); }
+}
+
+async function kycUpload(req, res) {
+  try {
+    const data = await kycService.uploadDocument(req.merchant.id, req.query.kind, req.file);
+    res.json({ status: true, data });
+  } catch (err) { kycError(res, err); }
+}
+
+async function kycSubmit(req, res) {
+  try {
+    res.json({ status: true, data: await kycService.submitKyc(req.merchant.id, req.body) });
+  } catch (err) { kycError(res, err); }
+}
+
+module.exports = {
+  sessionOnly, kycStatus, kycUpload, kycSubmit, profile, updateWebhook, regenerateKey, regenerateWebhook, updateSettlementAccount };
 
