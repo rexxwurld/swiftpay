@@ -74,6 +74,7 @@ async function startDemoCheckout({ amount, name, email, phone, baseUrl }) {
 
   const result = await initializePayment({
     merchantId,
+    redirect_url: new URL('/', process.env.PUBLIC_BASE_URL || baseUrl).toString(),
     amount: amountMinor, // this form collects naira from a human - convert to the API's minor-units contract here, not inside initializePayment
     customer: { email: trimmedEmail, name: trimmedName, phone: trimmedPhone || null },
     baseUrl,
