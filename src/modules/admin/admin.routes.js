@@ -39,6 +39,7 @@ const { ensureDefaultBankPartners, provisionAccountPool, maintainAccountPools } 
 const VirtualAccount = require('../virtualAccount/virtualAccount.model');
 const BankPartner = require('../bankPartner/bankPartner.model');
 const Merchant = require('../merchant/merchant.model');
+const kycService = require('../merchant/merchant.kyc.service');
 const limits = require('../../config/limits');
 const { releaseStaleAssignedAccounts, reactivateExpiredAccounts } = require('../virtualAccount/virtualAccount.service');
 const { SUPPORTED_CURRENCIES } = require('../../config/currencies');
@@ -170,7 +171,7 @@ router.get('/merchants', requireAdminKey, async (req, res) => {
     if (isVerified !== undefined) query.isVerified = isVerified === 'true';
 
     const merchants = await Merchant.find(query)
-      .select('-passwordHash -testSecretKeyHash -liveSecretKeyHash -webhookSecret')
+      .select('-passwordHash -testSecretKeyHash -liveSecretKeyHash -webhookSecret -kyc.documents')
       .sort({ createdAt: -1 })
       .limit(Math.min(Number(limit) || 50, 200));
 
@@ -379,6 +380,54 @@ router.patch('/merchants/:id/settlement-account/verify', requireAdminKey, async 
     await merchant.save();
     res.json({ status: true, message: 'Settlement account verified.', data: merchant });
   } catch (err) { res.status(400).json({ status: false, message: err.message }); }
+});
+
+// ================= MERCHANT KYC REVIEW =================
+// Approving flips merchant.isVerified, which unlocks live mode - so this
+// needs a named superadmin/support session on top of the shared admin key.
+//
+//   GET  /api/admin/kyc?status=pending
+//   GET  /api/admin/kyc/:merchantId          (returns 5-minute signed document URLs)
+//   POST /api/admin/kyc/:merchantId/approve
+//   POST /api/admin/kyc/:merchantId/reject   { "reason": "..." }
+const KYC_ADMIN_ERRORS = {
+  merchant_not_found: 404,
+  kyc_not_pending: 409,
+  kyc_not_reviewable: 409,
+  invalid_status: 400,
+  rejection_reason_required: 400,
+  storage_not_configured: 503,
+};
+function kycAdminError(res, err) {
+  const code = KYC_ADMIN_ERRORS[err.message];
+  if (code) return res.status(code).json({ status: false, message: err.message });
+  console.error('admin kyc error:', err);
+  return res.status(500).json({ status: false, message: 'something_went_wrong' });
+}
+
+router.get('/kyc', requireAdminKey, requireAdminRole('superadmin', 'support'), async (req, res) => {
+  try {
+    const data = await kycService.listKycSubmissions(req.query.status || 'pending', req.query.limit);
+    res.json({ status: true, data });
+  } catch (err) { kycAdminError(res, err); }
+});
+
+router.get('/kyc/:merchantId', requireAdminKey, requireAdminRole('superadmin', 'support'), async (req, res) => {
+  try {
+    res.json({ status: true, data: await kycService.getKycForReview(req.params.merchantId, req.adminUser) });
+  } catch (err) { kycAdminError(res, err); }
+});
+
+router.post('/kyc/:merchantId/approve', requireAdminKey, requireAdminRole('superadmin', 'support'), async (req, res) => {
+  try {
+    res.json({ status: true, data: await kycService.approveKyc(req.params.merchantId, req.adminUser) });
+  } catch (err) { kycAdminError(res, err); }
+});
+
+router.post('/kyc/:merchantId/reject', requireAdminKey, requireAdminRole('superadmin', 'support'), async (req, res) => {
+  try {
+    res.json({ status: true, data: await kycService.rejectKyc(req.params.merchantId, (req.body || {}).reason, req.adminUser) });
+  } catch (err) { kycAdminError(res, err); }
 });
 
 // Manual fallback for verifying a payout Recipient's account name when
