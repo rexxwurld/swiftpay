@@ -15,8 +15,21 @@ const { jwtSecret, jwtExpiresIn } = require('../../config/env');
 
 const VALID_PLANS = ['starter', 'growth', 'enterprise'];
 
+function normalizeEmail(email) {
+  return typeof email === 'string' ? email.trim().toLowerCase() : '';
+}
+
+// Case-insensitive lookup (collation strength 2) so accounts that were
+// registered before normalization existed, with mixed-case emails stored
+// as typed, can still log in. New accounts are always stored lowercase.
+function findByEmail(email) {
+  return Merchant.findOne({ email }).collation({ locale: 'en', strength: 2 });
+}
+
 async function registerMerchant({ businessName, email, password, plan }) {
-  const existing = await Merchant.findOne({ email });
+  email = normalizeEmail(email);
+  if (!email) throw new Error('email_required');
+  const existing = await findByEmail(email);
   if (existing) throw new Error('email_already_registered');
 
   const passwordHash = await bcrypt.hash(password, 10);
@@ -46,7 +59,9 @@ async function registerMerchant({ businessName, email, password, plan }) {
 }
 
 async function loginMerchant({ email, password }) {
-  const merchant = await Merchant.findOne({ email });
+  email = normalizeEmail(email);
+  if (!email || typeof password !== 'string') throw new Error('invalid_credentials');
+  const merchant = await findByEmail(email);
   if (!merchant) throw new Error('invalid_credentials');
 
   const valid = await bcrypt.compare(password, merchant.passwordHash);
