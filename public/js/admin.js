@@ -14,6 +14,12 @@
 const KEY_STORAGE = 'swiftpay_admin_key';
 const SESSION_STORAGE = 'swiftpay_admin_session';
 
+// Everything merchants type (business name, email, KYC fields) is untrusted
+// and gets rendered into this page - always escape before using innerHTML.
+function esc(v) {
+  return String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 function toast(msg, isErr = false) {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -103,6 +109,7 @@ function showDashboard() {
   loadWebhookEvents();
   loadAuditLogs();
   loadMerchants();
+  loadKycQueue();
 }
 
 /* ---------- Named admin session ---------- */
@@ -148,6 +155,7 @@ async function sessionLogin() {
     refreshSessionUi();
     toast('Signed in.');
     loadStuckPayments();
+    loadKycQueue();
   } catch (err) {
     toast(err.message, true);
   } finally {
@@ -507,9 +515,9 @@ function renderMerchants(merchants) {
 
   body.innerHTML = merchants.map((m) => `
     <tr>
-      <td>${m.businessName}</td>
-      <td>${m.email}</td>
-      <td>${m.plan || 'starter'}</td>
+      <td>${esc(m.businessName)}</td>
+      <td>${esc(m.email)}</td>
+      <td>${esc(m.plan || 'starter')}</td>
       <td><span class="pill ${m.isVerified ? 'ok' : 'low'}">${m.isVerified ? 'Verified' : 'Unverified'}</span></td>
       <td>${fmtAge(m.createdAt)} ago</td>
     </tr>
@@ -517,6 +525,135 @@ function renderMerchants(merchants) {
 }
 
 document.getElementById('merchRefreshBtn').addEventListener('click', loadMerchants);
+
+/* ---------- KYC review ---------- */
+
+const KYC_KIND_LABELS = { id: 'ID document', proof_of_address: 'Proof of address', cac: 'CAC certificate' };
+
+async function loadKycQueue() {
+  const empty = document.getElementById('kycEmpty');
+  try {
+    const status = document.getElementById('kycStatusFilter').value;
+    const res = await adminApi('/kyc?status=' + encodeURIComponent(status));
+    renderKycQueue(res.data || []);
+  } catch (err) {
+    if (err.needsSession) {
+      document.getElementById('kycTableBody').innerHTML = '';
+      empty.textContent = 'Sign in to a named superadmin or support admin session (above) to review submissions.';
+      empty.style.display = 'block';
+    } else if (err.message !== 'unauthorized') {
+      toast(err.message, true);
+    }
+  }
+}
+
+function renderKycQueue(rows) {
+  const body = document.getElementById('kycTableBody');
+  const empty = document.getElementById('kycEmpty');
+  if (!rows.length) {
+    body.innerHTML = '';
+    empty.textContent = 'Nothing here.';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  body.innerHTML = rows.map((r) => `
+    <tr>
+      <td>${esc(r.legalName || r.businessName)}<div style="font-size:12px;color:var(--muted,#667);">${esc(r.email)}</div></td>
+      <td>${esc(r.ownerFullName)}</td>
+      <td>${esc((r.businessType || '').replace(/_/g, ' '))}</td>
+      <td>${r.submittedAt ? fmtAge(r.submittedAt) + ' ago' : '-'}</td>
+      <td><button class="btn" data-kyc="${esc(r.merchantId)}">Review</button></td>
+    </tr>
+  `).join('');
+  body.querySelectorAll('button[data-kyc]').forEach((btn) => {
+    btn.addEventListener('click', () => openKycReview(btn.dataset.kyc));
+  });
+}
+
+async function openKycReview(merchantId) {
+  const panel = document.getElementById('kycReview');
+  try {
+    const res = await adminApi('/kyc/' + encodeURIComponent(merchantId));
+    const d = res.data;
+    const k = d.kyc || {};
+    const sa = d.settlementAccount || {};
+    const row = (label, value) => `<tr><td style="width:190px;color:#667;">${esc(label)}</td><td>${esc(value || '-')}</td></tr>`;
+
+    panel.innerHTML = `
+      <h3 style="margin:0 0 10px;">${esc(k.legalName || d.businessName)} <span class="pill ${k.status === 'approved' ? 'ok' : 'low'}">${esc(k.status)}</span></h3>
+      <table>
+        ${row('Account email', d.email)}
+        ${row('Business type', (k.businessType || '').replace(/_/g, ' '))}
+        ${row('Address', k.address)}
+        ${row('Website', k.website)}
+        ${row('What they sell', k.businessDescription)}
+        ${row('Owner (as on ID)', k.ownerFullName)}
+        ${row('ID type', (k.idType || '').replace(/_/g, ' '))}
+        ${row('Settlement account', [sa.accountName, sa.bankCode, sa.accountNumberLast4 ? '****' + sa.accountNumberLast4 : ''].filter(Boolean).join(' / '))}
+        ${row('Submitted', k.submittedAt ? new Date(k.submittedAt).toLocaleString() : '')}
+        ${k.rejectionReason ? row('Last rejection reason', k.rejectionReason) : ''}
+      </table>
+      <div id="kycDocs" style="margin:12px 0;"></div>
+      <div style="font-size:12px;color:#667;margin-bottom:12px;">Check: the name on the ID matches the owner, the settlement account name matches the legal name or owner, and the documents are legible. Document links expire in 5 minutes.</div>
+      <div class="resolve-actions">
+        <button class="btn primary" id="kycApproveBtn">Approve</button>
+        <input id="kycRejectReason" type="text" placeholder="Rejection reason (shown to merchant)" maxlength="300" style="margin:0 8px;min-width:260px;" />
+        <button class="btn" id="kycRejectBtn">Reject</button>
+        <button class="btn" id="kycCloseBtn" style="margin-left:8px;">Close</button>
+      </div>
+    `;
+
+    const docs = document.getElementById('kycDocs');
+    if (!d.documents.length) {
+      docs.textContent = 'No documents uploaded.';
+    }
+    d.documents.forEach((doc) => {
+      const a = document.createElement('a');
+      a.href = doc.url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = `${KYC_KIND_LABELS[doc.kind] || doc.kind}: ${doc.originalName} (${Math.round((doc.size || 0) / 1024)} KB)`;
+      a.style.display = 'block';
+      a.style.margin = '4px 0';
+      docs.appendChild(a);
+    });
+
+    document.getElementById('kycCloseBtn').addEventListener('click', () => { panel.style.display = 'none'; });
+    document.getElementById('kycApproveBtn').addEventListener('click', async () => {
+      if (!confirm('Approve this business? This unlocks live payments for them.')) return;
+      await decideKyc(merchantId, 'approve', {});
+    });
+    document.getElementById('kycRejectBtn').addEventListener('click', async () => {
+      const reason = document.getElementById('kycRejectReason').value.trim();
+      if (reason.length < 5) { toast('Enter a rejection reason (at least 5 characters)', true); return; }
+      await decideKyc(merchantId, 'reject', { reason });
+    });
+
+    panel.style.display = 'block';
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  } catch (err) {
+    if (err.needsSession) toast('Sign in to a superadmin or support admin session first', true);
+    else if (err.message !== 'unauthorized') toast(err.message.replace(/_/g, ' '), true);
+  }
+}
+
+async function decideKyc(merchantId, action, payload) {
+  try {
+    await adminApi('/kyc/' + encodeURIComponent(merchantId) + '/' + action, { method: 'POST', body: JSON.stringify(payload) });
+    toast(action === 'approve' ? 'Approved' : 'Rejected');
+    document.getElementById('kycReview').style.display = 'none';
+    loadKycQueue();
+    loadMerchants();
+  } catch (err) {
+    if (err.needsSession) toast('Sign in to a superadmin or support admin session first', true);
+    else if (err.message !== 'unauthorized') toast(err.message.replace(/_/g, ' '), true);
+  }
+}
+
+document.getElementById('kycRefreshBtn').addEventListener('click', loadKycQueue);
+document.getElementById('kycStatusFilter').addEventListener('change', loadKycQueue);
+
 
 document.getElementById('refreshBtn').addEventListener('click', loadPoolStatus);
 document.getElementById('provisionBtn').addEventListener('click', provisionPool);

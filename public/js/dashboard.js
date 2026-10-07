@@ -86,7 +86,6 @@ async function loadProfile() {
     localStorage.setItem('swiftpay_mode', 'test');
   }
   syncModeUi();
-  renderVerification();
   document.getElementById('bizName').textContent = res.data.businessName;
   document.getElementById('bizEmail').textContent = res.data.email;
   document.getElementById('webhookUrlInput').value = res.data.webhookUrl || '';
@@ -1588,22 +1587,12 @@ function syncModeUi() {
   });
 }
 
-function renderVerification() {
-  const badge = document.getElementById('verifyBadge');
-  badge.textContent = merchantVerified ? 'verified' : 'unverified';
-  badge.classList.toggle('live', merchantVerified);
-  document.getElementById('verifyForm').style.display = merchantVerified ? 'none' : '';
-  document.getElementById('verifyDesc').textContent = merchantVerified
-    ? 'Your account is verified. You can create live payment links and use Live mode.'
-    : 'Verify your account to create live payment links and switch the dashboard to Live mode.';
-}
-
 document.querySelectorAll('#modeSwitch .mode-opt').forEach((btn) => {
   btn.addEventListener('click', async () => {
     const next = btn.dataset.mode;
     if (next === VIEW_MODE) return;
     if (next === 'live' && !merchantVerified) {
-      toast('Verify your account in Settings to use Live mode', true);
+      toast('Complete business verification in Settings to use Live mode', true);
       showTab('settings');
       return;
     }
@@ -1619,15 +1608,131 @@ document.querySelectorAll('#modeSwitch .mode-opt').forEach((btn) => {
   });
 });
 
-document.getElementById('verifyBtn').addEventListener('click', async () => {
-  const input = document.getElementById('verifyPassword');
-  if (!input.value) { toast('Enter your password to verify', true); return; }
+/* ---------- Business verification (KYC) ---------- */
+const KYC_LABELS = { not_started: 'not started', pending: 'under review', approved: 'verified', rejected: 'rejected' };
+const KYC_MESSAGES = {
+  not_started: 'Submit your business details and documents to unlock live payments. You can keep using Demo mode in the meantime.',
+  pending: 'Your submission is under review. Live mode unlocks as soon as it is approved.',
+  approved: 'Your business is verified. You can create live payment links and use Live mode.',
+  rejected: 'Your submission was not approved. Fix the issue below and submit again.',
+};
+const KYC_KINDS = ['id', 'proof_of_address', 'cac'];
+let kycState = null;
+
+async function loadKyc() {
+  const res = await api('/api/merchant/kyc');
+  kycState = res.data;
+  renderKyc();
+}
+
+function renderKyc() {
+  const k = kycState;
+  if (!k) return;
+
+  merchantVerified = k.status === 'approved';
+
+  const badge = document.getElementById('kycBadge');
+  badge.textContent = KYC_LABELS[k.status] || k.status;
+  badge.classList.toggle('live', k.status === 'approved');
+  document.getElementById('kycDesc').textContent = KYC_MESSAGES[k.status] || '';
+
+  const reject = document.getElementById('kycReject');
+  if (k.status === 'rejected' && k.rejectionReason) {
+    reject.textContent = 'Reason: ' + k.rejectionReason;
+    reject.style.display = '';
+  } else {
+    reject.style.display = 'none';
+  }
+
+  document.getElementById('kycForm').style.display = k.canEdit ? '' : 'none';
+  document.getElementById('kycSettleHint').style.display = k.canEdit && !k.settlementAccountSet ? '' : 'none';
+
+  // Prefill saved details without overwriting anything the merchant is typing.
+  const d = k.details || {};
+  const fields = {
+    kycBusinessType: d.businessType, kycLegalName: d.legalName, kycAddress: d.address,
+    kycWebsite: d.website, kycDescription: d.businessDescription, kycOwnerName: d.ownerFullName, kycIdType: d.idType,
+  };
+  Object.entries(fields).forEach(([id, value]) => {
+    const el = document.getElementById(id);
+    if (el && !el.value && value) el.value = value;
+  });
+
+  document.getElementById('kycCacField').style.display =
+    document.getElementById('kycBusinessType').value === 'registered_company' ? '' : 'none';
+
+  KYC_KINDS.forEach((kind) => {
+    const doc = (k.documents || []).find((x) => x.kind === kind);
+    const el = document.getElementById('kycFileStatus_' + kind);
+    el.textContent = doc ? '\u2713 ' + doc.originalName + ' (uploaded)' : '';
+  });
+}
+
+async function uploadKycDoc(kind, file) {
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch('/api/merchant/kyc/documents?kind=' + encodeURIComponent(kind), {
+    method: 'POST',
+    body: fd, // browser sets the multipart boundary - do not set Content-Type
+    credentials: 'same-origin',
+    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+  });
+  const body = await res.json().catch(() => ({}));
+  if (res.status === 401) {
+    window.location.href = '/onboarding?tab=login';
+    throw new Error('unauthenticated');
+  }
+  if (!res.ok || body.status === false) throw new Error(body.message || 'upload_failed');
+  return body.data;
+}
+
+document.getElementById('kycBusinessType').addEventListener('change', () => {
+  document.getElementById('kycCacField').style.display =
+    document.getElementById('kycBusinessType').value === 'registered_company' ? '' : 'none';
+});
+
+KYC_KINDS.forEach((kind) => {
+  document.getElementById('kycFile_' + kind).addEventListener('change', async (e) => {
+    const input = e.target;
+    const file = input.files[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast('File is larger than 5 MB', true);
+      input.value = '';
+      return;
+    }
+    const status = document.getElementById('kycFileStatus_' + kind);
+    status.textContent = 'Uploading...';
+    try {
+      await uploadKycDoc(kind, file);
+      await loadKyc();
+      toast('Document uploaded');
+    } catch (err) {
+      status.textContent = '';
+      if (err.message !== 'unauthenticated') toast(err.message.replace(/_/g, ' '), true);
+    } finally {
+      input.value = '';
+    }
+  });
+});
+
+document.getElementById('kycSubmitBtn').addEventListener('click', async () => {
+  const val = (id) => document.getElementById(id).value.trim();
   try {
-    await api('/api/merchant/verify', { method: 'POST', body: JSON.stringify({ password: input.value }) });
-    input.value = '';
-    merchantVerified = true;
-    renderVerification();
-    toast('Account verified - Live mode unlocked');
+    await api('/api/merchant/kyc/submit', {
+      method: 'POST',
+      body: JSON.stringify({
+        businessType: val('kycBusinessType'),
+        legalName: val('kycLegalName'),
+        address: val('kycAddress'),
+        website: val('kycWebsite'),
+        businessDescription: val('kycDescription'),
+        ownerFullName: val('kycOwnerName'),
+        idType: val('kycIdType'),
+      }),
+    });
+    await loadKyc();
+    toast('Submitted for review');
   } catch (err) {
     toast(err.message.replace(/_/g, ' '), true);
   }
@@ -1640,6 +1745,7 @@ renderGreeting();
     // Profile first: it tells us whether a saved 'live' choice is still allowed
     // before any mode-scoped data (wallet, transactions, payouts) is requested.
     await loadProfile();
+    loadKyc().catch(() => {}); // fills the Settings panel; failure must not block the dashboard
     await refreshAll();
   } catch (err) {
     if (err.message !== 'unauthenticated') toast(err.message, true);
