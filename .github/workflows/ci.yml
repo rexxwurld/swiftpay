@@ -35,8 +35,10 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
 
+      # Full install (dev dependencies included) - jest, supertest and
+      # mongodb-memory-server are devDependencies and the tests need them.
       - name: Install dependencies
-        run: npm install --omit=dev
+        run: npm install
 
       - name: Run tests
         run: npm test -- --forceExit
